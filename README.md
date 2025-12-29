@@ -1,6 +1,6 @@
-# Vulcan an educational exploit / test malware creatot for educational use only !!
+# **Vulcan an educational exploit / test malware creatot for educational use only !!**
 
 <br> git clone https://github.com/Akshithsurya/Vulcan <br> cd Vulcan <br>chmod +x vulcan.sh <br> ./vulcan.sh
 
 
-# dont blame me for any harm you cause!!
+# **dont blame me for any harm you cause!!**

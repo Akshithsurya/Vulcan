@@ -784,7 +784,7 @@ For educational inquiries only:
 
 **OFFICIAL REPOSITORY:** [github.com/Akshithsurya/Vulcan](https://github.com/Akshithsurya/Vulcan)
 
-Last Updated: 2026 | Version: 7.95auto
+Last Updated: 2026 | Version: 7.9-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec
 
 © 2026 VULCAN Educational Framework | Created by Akshithsurya
 

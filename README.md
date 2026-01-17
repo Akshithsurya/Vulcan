@@ -37,7 +37,7 @@
       <code>ELF Binary</code>
     </td>
     <td align="center" width="200">
-      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="80" style="filter: grayscale(100%);"/><br/>
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="80"/><br/>
       <b>macOS</b><br/>
       <sub>Full Support</sub><br/>
       <code>Mach-O</code>
@@ -46,7 +46,7 @@
       <div style="position: relative; width: 80px; height: 80px; margin: 0 auto;">
         <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/windows8/windows8-original.svg" width="40" style="position: absolute; top: 0; left: 0; opacity: 0.8;"/>
         <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" width="40" style="position: absolute; top: 20px; left: 20px; opacity: 0.8;"/>
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="40" style="position: absolute; top: 0; right: 0; opacity: 0.6; filter: grayscale(100%);"/>
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="40" style="position: absolute; top: 0; right: 0; opacity: 0.6;"/>
       </div><br/>
       <b>Cross-Platform</b><br/>
       <sub>Advanced</sub><br/>
@@ -905,42 +905,3 @@ Safety Checklist:
 | **University Courses** | Supervised academic learning |
 | **Corporate Training** | Authorized employee education |
 | **Personal Education** | Own systems only |
-| **Security Research** | Isolated lab environments |
-| **CTF Competitions** | Sandboxed challenges |
-| **Penetration Testing** | Written authorization |
-| **Academic Research** | Ethics board approval |
-
-</div>
-
-### ❌ PROHIBITED Use
-
-<div align="center">
-
-| ❌ ILLEGAL | Consequences |
-|-----------|--------------|
-| **Unauthorized Access** | Criminal prosecution |
-| **Data Theft** | Imprisonment + Fines |
-| **Extortion** | Severe penalties |
-| **System Damage** | Civil liability |
-| **Unauthorized Testing** | Legal action |
-| **Corporate Espionage** | Federal charges |
-| **Critical Infrastructure** | National security threat |
-
-</div>
-
-### ⚖️ Legal Consequences
-
-```
-Computer Fraud and Abuse Act (CFAA)
-├── Up to 20 years imprisonment
-├── Fines up to $250,000
-└── Permanent criminal record
-
-State Computer Crime Laws
-├── Additional state penalties
-├── Concurrent sentences possible
-└── Varies by jurisdiction
-
-Civil Liability
-├── Financial damages
-├──

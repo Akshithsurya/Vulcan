@@ -37,13 +37,17 @@
       <code>ELF Binary</code>
     </td>
     <td align="center" width="200">
-      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="80"/><br/>
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="80" style="filter: grayscale(100%);"/><br/>
       <b>macOS</b><br/>
       <sub>Full Support</sub><br/>
       <code>Mach-O</code>
     </td>
     <td align="center" width="200">
-      <img src="https://img.icons8.com/fluency/96/000000/globe.png" width="80"/><br/>
+      <div style="position: relative; width: 80px; height: 80px; margin: 0 auto;">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/windows8/windows8-original.svg" width="40" style="position: absolute; top: 0; left: 0; opacity: 0.8;"/>
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" width="40" style="position: absolute; top: 20px; left: 20px; opacity: 0.8;"/>
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/apple/apple-original.svg" width="40" style="position: absolute; top: 0; right: 0; opacity: 0.6; filter: grayscale(100%);"/>
+      </div><br/>
       <b>Cross-Platform</b><br/>
       <sub>Advanced</sub><br/>
       <code>Universal</code>
@@ -102,6 +106,8 @@
 16. [📞 Support & Contact](#-support--contact)
 
 </details>
+
+---
 
 ---
 

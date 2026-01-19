@@ -32,8 +32,39 @@
 ![Security](https://img.shields.io/badge/Security-Research-purple)
 ![Auto-Execution](https://img.shields.io/badge/Auto--Execution-Enabled-critical)
 
-![GitHub](https://img.shields.io/badge/GitHub-Akshithsurya%2FVulcan-blue?logo=github) ![Version](https://img.shields.io/badge/version-7.95--auto-orange) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL-brightgreen) ![Python](https://img.shields.io/badge/python-3.7%2B-blue) ![Bash](https://img.shields.io/badge/bash-script-yellow) ![License](https://img.shields.io/badge/license-MIT-green) ![Educational](https://img.shields.io/badge/Educational%20Use-ONLY-red) ![Security](https://img.shields.io/badge/Security-Research-purple) ![Auto-Execution](https://img.shields.io/badge/Auto--Execution-Enabled-critical) 
-</div>
+<table align="center">
+  <tr>
+    <td align="center" width="200">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/windows8/windows8-original.svg" width="80"/><br/>
+      <b>Windows</b><br/>
+      <sub>Full Support</sub><br/>
+      <code>.exe</code>
+    </td>
+    <td align="center" width="200">
+      <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" width="80"/><br/>
+      <b>Linux</b><br/>
+      <sub>Full Support</sub><br/>
+      <code>ELF Binary</code>
+    </td>
+    <td align="center" width="200">
+      <img src="https://upload.wikimedia.org/wikipedia/commons/2/22/MacOS_logo_%282017%29.svg" width="80"/><br/>
+      <b>macOS</b><br/>
+      <sub>Full Support</sub><br/>
+      <code>Mach-O</code>
+    </td>
+    <td align="center" width="200">
+      <div style="position: relative; width: 80px; height: 80px; margin: 0 auto;">
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/windows8/windows8-original.svg" width="40" style="position: absolute; top: 0; left: 0; opacity: 0.8;"/>
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/linux/linux-original.svg" width="40" style="position: absolute; top: 20px; left: 20px; opacity: 0.8;"/>
+        <img src="https://upload.wikimedia.org/wikipedia/commons/2/22/MacOS_logo_%282017%29.svg" width="40" style="position: absolute; top: 0; right: 0; opacity: 0.6;"/>
+      </div><br/>
+      <b>Cross-Platform</b><br/>
+      <sub>Advanced</sub><br/>
+      <code>Universal</code>
+    </td>
+  </tr>
+</table>
+
 
 ---
 

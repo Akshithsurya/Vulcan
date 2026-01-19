@@ -32,6 +32,7 @@
 ![Security](https://img.shields.io/badge/Security-Research-purple)
 ![Auto-Execution](https://img.shields.io/badge/Auto--Execution-Enabled-critical)
 
+![GitHub](https://img.shields.io/badge/GitHub-Akshithsurya%2FVulcan-blue?logo=github) ![Version](https://img.shields.io/badge/version-7.95--auto-orange) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL-brightgreen) ![Python](https://img.shields.io/badge/python-3.7%2B-blue) ![Bash](https://img.shields.io/badge/bash-script-yellow) ![License](https://img.shields.io/badge/license-MIT-green) ![Educational](https://img.shields.io/badge/Educational%20Use-ONLY-red) ![Security](https://img.shields.io/badge/Security-Research-purple) ![Auto-Execution](https://img.shields.io/badge/Auto--Execution-Enabled-critical) 
 </div>
 
 ---

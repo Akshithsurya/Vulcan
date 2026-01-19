@@ -1725,12 +1725,15 @@ Use VULCAN ethically, legally, and for educational purposes only.
 [![Ethical](https://img.shields.io/badge/Use-Ethical%20Only-red)](https://github.com/Akshithsurya/Vulcan)
 
 </div>
-**OFFICIAL REPOSITORY:** [github.com/Akshithsurya/Vulcan](https://github.com/Akshithsurya/Vulcan)
+
 
 Last Updated: 2026 | Version: 7.99.3Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec-FakeGUI-FixedIndent-Enhanced
 
+
 © 2026 VULCAN Educational Framework | Created by Akshithsurya
 
+
 *This documentation is for the official VULCAN project. Use responsibly.*
+
 
 </div>

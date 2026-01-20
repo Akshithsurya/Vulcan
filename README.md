@@ -1755,10 +1755,10 @@ Use VULCAN ethically, legally, and for educational purposes only.
 </div>
 
 
-Last Updated: 2026 | Version: 7.99.3Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec-FakeGUI-FixedIndent-Enhanced
+Last Updated: 2026 | Version: 8.1-Image-Steganography-Delivery-Only-CrossPlatform
 
 
-© 2026 VULCAN Educational Framework | Created by Akshithsurya
+© 2026 VULCAN Educational Framework | Created by Akshithsurya 
 
 
 *This documentation is for the official VULCAN project. Use responsibly.*

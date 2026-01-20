@@ -245,8 +245,9 @@ Level 5: Military Grade  → Compression + Base64
 ### ⚡ Lightning Fast Setup
 
 ```bash
-# Clone the repository (or use your local copy)
-cd /path/to/vulcan
+git clone https://github.com/Akshithsurya/Vulcan
+
+cd Vulcan
 
 # Make the script executable
 chmod +x vulcan.sh
@@ -328,8 +329,10 @@ yara-python      # Pattern matching
 
  # git clone
 
-cd vulcan
+
 git clone https://github.com/Akshithsurya/Vulcan
+
+cd vulcan
 
 # Make executable
 

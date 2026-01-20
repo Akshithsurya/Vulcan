@@ -325,10 +325,14 @@ yara-python      # Pattern matching
 ### 📥 Method 1: Quick Install (Recommended)
 
 ```bash
-# Navigate to VULCAN directory
-cd /path/to/vulcan
+
+ # git clone
+
+cd vulcan
+git clone https://github.com/Akshithsurya/Vulcan
 
 # Make executable
+
 chmod +x vulcan.sh
 
 # Run (no sudo required)

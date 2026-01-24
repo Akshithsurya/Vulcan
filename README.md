@@ -1357,18 +1357,30 @@ rule VULCAN_Educational_Payload
 }
 EOF
 
+
+
+
 # Scan generated payload
+
+
 yara vulcan_detection.yar pc.exe
 
+
 # Example 2: Static analysis with strings
+
 strings pc.exe | grep -i "educational"
 
 # Example 3: Dynamic analysis with strace
+
 strace ./pc 2>&1 | tee execution_trace.log
 
+
 # Example 4: Memory analysis with volatility
+
 # Run payload in VM, take memory dump
+
 # Analyze with volatility framework
+
 ```
 
 ---
@@ -1482,6 +1494,7 @@ We welcome contributions to improve VULCAN! Here's how:
 2. **Create a Feature Branch**
    ```bash
    git checkout -b feature/amazing-feature
+   
    ```
 
 3. **Make Your Changes**

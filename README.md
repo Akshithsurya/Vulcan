@@ -1775,7 +1775,7 @@ Use VULCAN ethically, legally, and for educational purposes only.
 </div>
 
 
-Last Updated: 2026 | Version: 8.2-Image-Steganography-Delivery-Only-CrossPlatform
+Last Updated: 2026 | Version: 8.3-Image-Steganography-Delivery-Only-CrossPlatform
 
 
 © 2026 VULCAN Educational Framework | Created by Akshithsurya 
